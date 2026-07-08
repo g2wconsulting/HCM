@@ -1,0 +1,254 @@
+// Core domain types for the payroll & timekeeping platform.
+// Designed so a real backend/database can be swapped in later without
+// changing the shape of the data the UI works with.
+
+export type FilingStatus = 'single' | 'married_joint' | 'head_of_household';
+
+export type USState =
+  | 'AL' | 'AK' | 'AZ' | 'AR' | 'CA' | 'CO' | 'CT' | 'DE' | 'FL' | 'GA'
+  | 'HI' | 'ID' | 'IL' | 'IN' | 'IA' | 'KS' | 'KY' | 'LA' | 'ME' | 'MD'
+  | 'MA' | 'MI' | 'MN' | 'MS' | 'MO' | 'MT' | 'NE' | 'NV' | 'NH' | 'NJ'
+  | 'NM' | 'NY' | 'NC' | 'ND' | 'OH' | 'OK' | 'OR' | 'PA' | 'RI' | 'SC'
+  | 'SD' | 'TN' | 'TX' | 'UT' | 'VT' | 'VA' | 'WA' | 'WV' | 'WI' | 'WY' | 'DC';
+
+export interface Company {
+  id: string;
+  name: string;
+  ein?: string;
+  address?: string;
+  state: USState;
+  payFrequency: 'biweekly';
+  overtimeMultiplier: number; // e.g. 1.5
+  overtimeThresholdWeekly: number; // hours per week before OT, e.g. 40
+  createdAt: string;
+}
+
+export type OnboardingDocStatus = 'pending' | 'uploaded' | 'signed' | 'waived';
+
+export interface OnboardingDocument {
+  id: string;
+  employeeId: string;
+  name: string; // e.g. "W-4", "I-9", "Offer Letter", "Direct Deposit Form"
+  required: boolean;
+  status: OnboardingDocStatus;
+  fileDataUrl?: string; // base64 data url of uploaded file
+  fileName?: string;
+  signature?: SignatureRecord;
+  updatedAt: string;
+}
+
+export interface SignatureRecord {
+  name: string;
+  method: 'typed' | 'drawn';
+  dataUrl?: string; // for drawn signatures
+  typedFont?: string;
+  signedAt: string;
+  ip?: string; // placeholder, not actually captured
+}
+
+export type EmployeeStatus = 'onboarding' | 'active' | 'inactive' | 'terminated';
+export type PayType = 'hourly' | 'salary';
+
+export interface EmployeeRate {
+  id: string;
+  projectId: string | null; // null = default/base rate
+  hourlyRate: number;
+  effectiveDate: string;
+}
+
+export interface Employee {
+  id: string;
+  companyId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  title: string;
+  status: EmployeeStatus;
+  payType: PayType;
+  state: USState; // state for tax withholding
+  filingStatus: FilingStatus;
+  federalAllowancesExtraWithholding: number; // extra $ withheld per paycheck (W-4 step 4c)
+  salaryAnnual?: number; // for salaried employees
+  defaultHourlyRate: number; // base rate if no project-specific rate
+  dependentsCredit: number; // annual $ credit from W-4 step 3
+  hireDate: string;
+  terminationDate?: string;
+  rates: EmployeeRate[];
+  projectIds: string[]; // projects the employee is assigned to
+  createdAt: string;
+}
+
+export interface Client {
+  id: string;
+  companyId: string;
+  name: string;
+  contactName?: string;
+  contactEmail?: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface Project {
+  id: string;
+  companyId: string;
+  clientId: string | null;
+  name: string;
+  clientName?: string;
+  code: string;
+  active: boolean;
+  billRate?: number; // optional, for internal reference/client billing
+  createdAt: string;
+}
+
+export type TimesheetStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid';
+
+export interface TimeEntry {
+  id: string;
+  date: string; // ISO date
+  projectId: string | null;
+  hours: number;
+  notes?: string;
+}
+
+export interface Timesheet {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  weekStartDate: string; // ISO date, Monday
+  weekEndDate: string; // ISO date, Sunday
+  entries: TimeEntry[];
+  status: TimesheetStatus;
+  submittedAt?: string;
+  employeeSignature?: SignatureRecord;
+  approverSignature?: SignatureRecord;
+  approverName?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  clientApproval?: SignatureRecord;
+  clientApprovedAt?: string;
+  activeSession?: ActiveClockSession | null;
+  clockSessions: ClockSession[];
+  createdAt: string;
+}
+
+export interface ClockSession {
+  id: string;
+  date: string;
+  projectId: string | null;
+  startedAt: string;
+  endedAt: string;
+  hours: number;
+}
+
+export interface ActiveClockSession {
+  projectId: string | null;
+  startedAt: string;
+}
+
+export interface PayrollLineItem {
+  employeeId: string;
+  timesheetIds: string[];
+  regularHours: number;
+  overtimeHours: number;
+  grossRegularPay: number;
+  grossOvertimePay: number;
+  grossPay: number;
+  federalWithholding: number;
+  stateWithholding: number;
+  socialSecurity: number;
+  medicare: number;
+  additionalMedicare: number;
+  totalTaxes: number;
+  netPay: number;
+  breakdownByProject: { projectId: string | null; hours: number; amount: number }[];
+}
+
+export type PayrollRunStatus = 'draft' | 'finalized';
+
+export interface PayrollRun {
+  id: string;
+  companyId: string;
+  periodStart: string;
+  periodEnd: string;
+  payDate: string;
+  status: PayrollRunStatus;
+  lineItems: PayrollLineItem[];
+  createdAt: string;
+  finalizedAt?: string;
+}
+
+export type NoteVisibility = 'internal' | 'shared_with_client';
+
+export interface Note {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  authorId: string | null;
+  authorLabel: string;
+  body: string;
+  visibility: NoteVisibility;
+  createdAt: string;
+}
+
+export type AccommodationStatus = 'none' | 'requested' | 'in_review' | 'resolved';
+
+export interface AccommodationRequest {
+  employeeId: string;
+  needsAccommodation: boolean;
+  description?: string;
+  status: AccommodationStatus;
+  adminNotes?: string;
+  visibleToClient: boolean;
+  submittedAt?: string;
+  updatedAt: string;
+}
+
+export type FormFieldType = 'text' | 'textarea' | 'number' | 'date' | 'checkbox' | 'select';
+
+export interface FormField {
+  id: string;
+  label: string;
+  type: FormFieldType;
+  required: boolean;
+  options?: string[]; // for 'select'
+}
+
+export interface FormTemplate {
+  id: string;
+  companyId: string;
+  name: string;
+  description?: string;
+  fields: FormField[];
+  active: boolean;
+  createdAt: string;
+}
+
+export type FormSubmissionStatus = 'pending' | 'submitted';
+
+export interface FormSubmission {
+  id: string;
+  companyId: string;
+  templateId: string;
+  employeeId: string;
+  responses: Record<string, string | number | boolean>;
+  status: FormSubmissionStatus;
+  signature?: SignatureRecord;
+  visibleToClient: boolean;
+  submittedAt?: string;
+  createdAt: string;
+}
+
+export interface AppData {
+  companies: Company[];
+  clients: Client[];
+  employees: Employee[];
+  projects: Project[];
+  timesheets: Timesheet[];
+  onboardingDocs: OnboardingDocument[];
+  notes: Note[];
+  accommodationRequests: AccommodationRequest[];
+  formTemplates: FormTemplate[];
+  formSubmissions: FormSubmission[];
+  payrollRuns: PayrollRun[];
+  currentCompanyId: string | null;
+}
