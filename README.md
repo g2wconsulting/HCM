@@ -153,6 +153,29 @@ onboarding documents work. Admins can review submitted responses on the
 employee's profile, and optionally mark a submission "visible to client"
 so it also shows up in the client portal (read-only).
 
+## Password reset & self-serve login management
+
+Anyone can now reset a forgotten password from the login screen ("Forgot
+password?"), and anyone already logged in can change their password from
+the "Change password" link in the sidebar — no admin involvement needed
+for either.
+
+**One-time setup required** for the reset email link to work: in your
+Supabase dashboard, go to **Authentication → URL Configuration** and add
+your app's URL(s) to the redirect allowlist:
+- `http://localhost:5180/reset-password` (for local dev)
+- `https://your-vercel-url.vercel.app/reset-password` (for production —
+  update this if your Vercel URL changes)
+
+Without this, Supabase will reject the redirect and the reset link will
+fail. If you add a custom domain later, add that too.
+
+Supabase's default email sending works out of the box for testing, but
+has rate limits and sends from a generic address — for production use
+serving real employees, consider configuring a custom SMTP provider
+under **Authentication → Emails** in Supabase so reset emails reliably
+land in inboxes (not spam) and come from your own domain.
+
 ## Known simplifications, worth knowing about
 
 - **Timesheet approval by clients assumes one client per week.** A

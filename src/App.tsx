@@ -20,6 +20,7 @@ import { PortalEmployees } from './pages/PortalEmployees';
 import { PortalEmployeeDetail } from './pages/PortalEmployeeDetail';
 import { PortalTimesheets } from './pages/PortalTimesheets';
 import { PortalTimesheetDetail } from './pages/PortalTimesheetDetail';
+import { ResetPassword } from './pages/ResetPassword';
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { session, profile, loading, error, signOut } = useAuth();
@@ -54,32 +55,41 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Gate>
-          <Routes>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/timesheets" element={<RoleOnly roles={['admin', 'employee']}><Timesheets /></RoleOnly>} />
-              <Route path="/timesheets/:id" element={<RoleOnly roles={['admin', 'employee']}><TimesheetDetail /></RoleOnly>} />
-              <Route path="/my-pay" element={<RoleOnly roles={['employee']}><MyPay /></RoleOnly>} />
-              <Route path="/my-onboarding" element={<RoleOnly roles={['employee']}><MyOnboarding /></RoleOnly>} />
-
-              <Route path="/employees" element={<RoleOnly roles={['admin']}><Employees /></RoleOnly>} />
-              <Route path="/employees/:id" element={<RoleOnly roles={['admin']}><EmployeeDetail /></RoleOnly>} />
-              <Route path="/clients" element={<RoleOnly roles={['admin']}><Clients /></RoleOnly>} />
-              <Route path="/forms" element={<RoleOnly roles={['admin']}><FormTemplates /></RoleOnly>} />
-              <Route path="/projects" element={<RoleOnly roles={['admin']}><Projects /></RoleOnly>} />
-              <Route path="/payroll" element={<RoleOnly roles={['admin']}><Payroll /></RoleOnly>} />
-              <Route path="/payroll/:id" element={<RoleOnly roles={['admin']}><PayrollRunDetail /></RoleOnly>} />
-              <Route path="/settings" element={<RoleOnly roles={['admin']}><Settings /></RoleOnly>} />
-
-              <Route path="/portal/employees" element={<RoleOnly roles={['client']}><PortalEmployees /></RoleOnly>} />
-              <Route path="/portal/employees/:id" element={<RoleOnly roles={['client']}><PortalEmployeeDetail /></RoleOnly>} />
-              <Route path="/portal/timesheets" element={<RoleOnly roles={['client']}><PortalTimesheets /></RoleOnly>} />
-              <Route path="/portal/timesheets/:id" element={<RoleOnly roles={['client']}><PortalTimesheetDetail /></RoleOnly>} />
-            </Route>
-          </Routes>
-        </Gate>
+        <Routes>
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/*" element={<GatedApp />} />
+        </Routes>
       </BrowserRouter>
     </AuthProvider>
+  );
+}
+
+function GatedApp() {
+  return (
+    <Gate>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/timesheets" element={<RoleOnly roles={['admin', 'employee']}><Timesheets /></RoleOnly>} />
+          <Route path="/timesheets/:id" element={<RoleOnly roles={['admin', 'employee']}><TimesheetDetail /></RoleOnly>} />
+          <Route path="/my-pay" element={<RoleOnly roles={['employee']}><MyPay /></RoleOnly>} />
+          <Route path="/my-onboarding" element={<RoleOnly roles={['employee']}><MyOnboarding /></RoleOnly>} />
+
+          <Route path="/employees" element={<RoleOnly roles={['admin']}><Employees /></RoleOnly>} />
+          <Route path="/employees/:id" element={<RoleOnly roles={['admin']}><EmployeeDetail /></RoleOnly>} />
+          <Route path="/clients" element={<RoleOnly roles={['admin']}><Clients /></RoleOnly>} />
+          <Route path="/forms" element={<RoleOnly roles={['admin']}><FormTemplates /></RoleOnly>} />
+          <Route path="/projects" element={<RoleOnly roles={['admin']}><Projects /></RoleOnly>} />
+          <Route path="/payroll" element={<RoleOnly roles={['admin']}><Payroll /></RoleOnly>} />
+          <Route path="/payroll/:id" element={<RoleOnly roles={['admin']}><PayrollRunDetail /></RoleOnly>} />
+          <Route path="/settings" element={<RoleOnly roles={['admin']}><Settings /></RoleOnly>} />
+
+          <Route path="/portal/employees" element={<RoleOnly roles={['client']}><PortalEmployees /></RoleOnly>} />
+          <Route path="/portal/employees/:id" element={<RoleOnly roles={['client']}><PortalEmployeeDetail /></RoleOnly>} />
+          <Route path="/portal/timesheets" element={<RoleOnly roles={['client']}><PortalTimesheets /></RoleOnly>} />
+          <Route path="/portal/timesheets/:id" element={<RoleOnly roles={['client']}><PortalTimesheetDetail /></RoleOnly>} />
+        </Route>
+      </Routes>
+    </Gate>
   );
 }

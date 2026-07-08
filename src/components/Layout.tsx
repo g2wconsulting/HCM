@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 const ADMIN_NAV = [
   { to: '/', label: 'Dashboard', icon: LedgerIcon },
@@ -29,6 +31,7 @@ const CLIENT_NAV = [
 export function Layout() {
   const { company } = useApp();
   const { profile, signOut } = useAuth();
+  const [showChangePw, setShowChangePw] = useState(false);
   const nav = profile?.role === 'admin' ? ADMIN_NAV : profile?.role === 'client' ? CLIENT_NAV : EMPLOYEE_NAV;
 
   return (
@@ -69,9 +72,13 @@ export function Layout() {
               <span className="px-1.5 py-0.5 rounded-full bg-[var(--border-soft)] text-[10px] uppercase tracking-wide">{profile.role}</span>
             )}
           </div>
-          <button onClick={signOut} className="focus-ring text-[var(--accent)] hover:underline">Sign out</button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowChangePw(true)} className="focus-ring text-[var(--ink-soft)] hover:text-[var(--ink)] hover:underline">Change password</button>
+            <button onClick={signOut} className="focus-ring text-[var(--accent)] hover:underline">Sign out</button>
+          </div>
         </div>
       </aside>
+      {showChangePw && <ChangePasswordModal onClose={() => setShowChangePw(false)} />}
       <main className="flex-1 min-w-0">
         <div className="max-w-6xl mx-auto px-8 py-8">
           <Outlet />
