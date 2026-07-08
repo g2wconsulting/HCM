@@ -4,8 +4,8 @@ import { useAuth } from '../lib/AuthContext';
 
 const ADMIN_NAV = [
   { to: '/', label: 'Dashboard', icon: LedgerIcon },
-  { to: '/timesheets', label: 'Timesheets', icon: ClockIcon },
   { to: '/employees', label: 'Employees', icon: PeopleIcon },
+  { to: '/timesheets', label: 'Timesheets', icon: ClockIcon },
   { to: '/clients', label: 'Clients', icon: BuildingIcon },
   { to: '/projects', label: 'Projects', icon: FolderIcon },
   { to: '/forms', label: 'Forms', icon: FormIcon },
