@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
-import { Badge, Button, Card } from '../components/ui';
+import { Badge, Button, Card, EmptyState } from '../components/ui';
 import { formatDate, hours as fmtHours, exportTimesheetCsv } from '../lib/format';
 import type { TimesheetStatus } from '../lib/types';
 
@@ -125,7 +125,13 @@ export function Timesheets() {
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-5 py-10 text-center text-[var(--muted)]">No timesheets match these filters.</td></tr>
+              <tr><td colSpan={6} className="p-0">
+                <EmptyState
+                  icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>}
+                  title="No timesheets match these filters"
+                  subtitle="Try a different status or employee, or start this week's timesheet above."
+                />
+              </td></tr>
             )}
           </tbody>
         </table>

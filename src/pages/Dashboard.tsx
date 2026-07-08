@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
-import { Badge, Card, SectionLabel } from '../components/ui';
+import { Badge, Card, SectionLabel, IconStat } from '../components/ui';
 import { formatDate, money, exportTimesheetCsv } from '../lib/format';
 import { PortalDashboard } from './PortalDashboard';
 import { ClockWidget } from '../components/ClockWidget';
@@ -41,8 +41,8 @@ export function Dashboard() {
           </Card>
         )}
         <div className="grid grid-cols-2 gap-4">
-          <StatCard label="Timesheets needing action" value={String(myDraftOrRejected.length)} sub="draft or sent back" tone={myDraftOrRejected.length ? 'pending' : undefined} />
-          <StatCard label="Onboarding documents outstanding" value={String(myDocs.length)} sub="required, unsigned" tone={myDocs.length ? 'bad' : undefined} />
+          <IconStat icon={<ClockGlyph />} tone="pending" label="Timesheets needing action" value={String(myDraftOrRejected.length)} sub="draft or sent back" subTone={myDraftOrRejected.length ? 'pending' : undefined} />
+          <IconStat icon={<DocGlyph />} tone="bad" label="Onboarding documents outstanding" value={String(myDocs.length)} sub="required, unsigned" subTone={myDocs.length ? 'bad' : undefined} />
         </div>
         <Card>
           <SectionLabel>Your timesheets</SectionLabel>
@@ -80,9 +80,9 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        <StatCard label="Active employees" value={String(activeCount)} sub={onboardingCount ? `${onboardingCount} onboarding` : 'All set'} />
-        <StatCard label="Timesheets to approve" value={String(pendingApproval.length)} sub="awaiting manager sign-off" tone={pendingApproval.length ? 'pending' : undefined} />
-        <StatCard label="Outstanding onboarding docs" value={String(outstandingDocs.length)} sub="required, unsigned" tone={outstandingDocs.length ? 'bad' : undefined} />
+        <IconStat icon={<PeopleGlyph />} tone="accent" label="Active employees" value={String(activeCount)} sub={onboardingCount ? `${onboardingCount} onboarding` : 'All set'} subTone={onboardingCount ? 'pending' : 'good'} />
+        <IconStat icon={<ClockGlyph />} tone="pending" label="Timesheets to approve" value={String(pendingApproval.length)} sub="awaiting manager sign-off" subTone={pendingApproval.length ? 'pending' : 'good'} />
+        <IconStat icon={<DocGlyph />} tone="bad" label="Outstanding onboarding docs" value={String(outstandingDocs.length)} sub="required, unsigned" subTone={outstandingDocs.length ? 'bad' : 'good'} />
       </div>
 
       <div className="grid grid-cols-2 gap-6">
@@ -170,16 +170,12 @@ export function Dashboard() {
   );
 }
 
-function StatCard({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: 'pending' | 'bad' }) {
-  const toneColor = tone === 'bad' ? 'text-[var(--bad)]' : tone === 'pending' ? 'text-[var(--pending)]' : 'text-[var(--muted)]';
-  return (
-    <Card>
-      <div className="text-xs font-semibold tracking-wide uppercase text-[var(--muted)]">{label}</div>
-      <div className="font-display text-3xl mt-1 tabular">{value}</div>
-      <div className={`text-xs mt-1 ${toneColor}`}>{sub}</div>
-    </Card>
-  );
+function glyphProps() {
+  return { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
 }
+function PeopleGlyph() { return <svg {...glyphProps()}><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><circle cx="17.5" cy="9" r="2.3" /><path d="M15.8 14.3c2.4.3 4.2 2.4 4.2 5" /></svg>; }
+function ClockGlyph() { return <svg {...glyphProps()}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>; }
+function DocGlyph() { return <svg {...glyphProps()}><rect x="5" y="3" width="14" height="18" rx="1.5" /><path d="M8.5 8h7M8.5 12h7M8.5 16h4" /></svg>; }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
