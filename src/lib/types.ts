@@ -238,6 +238,25 @@ export interface FormSubmission {
   createdAt: string;
 }
 
+export type SignatureRequestStatus = 'sent' | 'viewed' | 'signed' | 'declined';
+
+export interface SignatureRequest {
+  id: string;
+  companyId: string;
+  employeeId: string;
+  timesheetIds: string[];
+  rangeStart: string;
+  rangeEnd: string;
+  recipientName: string;
+  recipientEmail: string;
+  token: string;
+  status: SignatureRequestStatus;
+  signature?: SignatureRecord;
+  signedAt?: string;
+  createdBy?: string | null;
+  createdAt: string;
+}
+
 export interface AppData {
   companies: Company[];
   clients: Client[];
@@ -249,6 +268,7 @@ export interface AppData {
   accommodationRequests: AccommodationRequest[];
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
+  signatureRequests: SignatureRequest[];
   payrollRuns: PayrollRun[];
   currentCompanyId: string | null;
 }

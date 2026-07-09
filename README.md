@@ -138,6 +138,66 @@ HTTPS, with `try_files $uri /index.html;` for client-side routing.
   Admins can see and manage the status; clients see it only if the admin
   leaves "visible to client" checked (on by default).
 
+## Sending timesheets out for external e-signature
+
+This is the real approval mechanism for teams where staff manage time but
+an outside party (like a client's hiring manager) approves it — no login
+required on their end, and signing automatically marks the underlying
+timesheets "approved" so they're ready for payroll.
+
+Flow: **Timesheets → Export range to PDF** (pick employee + date range)
+**→ Send for e-signature** (enter the recipient's name and email). They
+get an email with a link, review the hours on a clean page, sign, done.
+You can track status (sent / viewed / signed) back on that export page.
+
+### One-time setup (this feature needs real email sending)
+
+1. **Run the migration**: `supabase/migration_004_signature_requests.sql`
+   in the Supabase SQL editor.
+
+2. **Create a free Resend account** at resend.com — this is what actually
+   sends the email. Grab an API key from their dashboard.
+   - For quick testing, Resend lets you send from `onboarding@resend.dev`
+     with no setup. For real use, verify your own domain in Resend
+     (resend.com/domains) so emails come from your address and land in
+     inboxes reliably.
+
+3. **Install the Supabase CLI** (a separate tool from the Supabase
+   dashboard — this lets you deploy the small server-side function that
+   actually sends the email):
+   ```bash
+   npm install -g supabase
+   supabase login
+   ```
+   Then link it to your project (find your project ref in the Supabase
+   dashboard URL, or under Project Settings → General):
+   ```bash
+   supabase link --project-ref your-project-ref
+   ```
+
+4. **Set the email secrets** (these stay server-side, never touch the
+   browser):
+   ```bash
+   supabase secrets set RESEND_API_KEY=re_your_key_here
+   supabase secrets set RESEND_FROM="Your Company <timesheets@yourdomain.com>"
+   ```
+   (Skip `RESEND_FROM` while testing to fall back to `onboarding@resend.dev`.)
+
+5. **Deploy the function**:
+   ```bash
+   supabase functions deploy send-signature-request
+   ```
+
+That's it — no changes needed to your `.env` or Vercel settings, since
+this function runs on Supabase's servers, not yours.
+
+### If you don't want to set this up right now
+
+The **Download PDF** and **Share / Email PDF** buttons next to "Send for
+e-signature" still work with zero setup — they just require you to send
+the email yourself rather than the system doing it, and won't
+automatically update anything when someone signs.
+
 ## Timesheets — admin control and PDF export
 
 Admins can now create a timesheet for **any employee, any week** (not

@@ -3,13 +3,14 @@ import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
 import type {
   AppData, Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission,
+  FormTemplate, FormSubmission, SignatureRequest,
 } from './types';
 import {
   rowToCompany, companyToRow, rowToEmployee, employeeToRow, rowToProject, projectToRow,
   rowToTimesheet, timesheetToRow, rowToDoc, docToRow, rowToPayrollRun, payrollRunToRow,
   rowToClient, clientToRow, rowToNote, noteToRow, rowToAccommodation, accommodationToRow,
   rowToFormTemplate, formTemplateToRow, rowToFormSubmission, formSubmissionToRow,
+  rowToSignatureRequest, signatureRequestToRow,
 } from './mappers';
 
 interface AppContextValue {
@@ -38,13 +39,15 @@ interface AppContextValue {
   updateFormSubmission: (id: string, patch: Partial<FormSubmission>) => Promise<void>;
   clockIn: (params: { employeeId: string; projectId: string | null }) => Promise<void>;
   clockOut: (timesheetId: string) => Promise<void>;
+  addSignatureRequest: (s: Omit<SignatureRequest, 'id' | 'createdAt' | 'status'>) => Promise<SignatureRequest | null>;
   addPayrollRun: (r: Omit<PayrollRun, 'id' | 'createdAt'>) => Promise<PayrollRun | null>;
   updatePayrollRun: (id: string, patch: Partial<PayrollRun>) => Promise<void>;
 }
 
 const emptyData: AppData = {
   companies: [], clients: [], employees: [], projects: [], timesheets: [], onboardingDocs: [],
-  notes: [], accommodationRequests: [], formTemplates: [], formSubmissions: [], payrollRuns: [], currentCompanyId: null,
+  notes: [], accommodationRequests: [], formTemplates: [], formSubmissions: [], signatureRequests: [],
+  payrollRuns: [], currentCompanyId: null,
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -60,7 +63,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, runsRes] = await Promise.all([
+      const [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, runsRes] = await Promise.all([
         supabase.from('companies').select('*').eq('id', profile.companyId),
         supabase.from('clients').select('*'),
         supabase.from('employees').select('*'),
@@ -71,9 +74,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabase.from('accommodation_requests').select('*'),
         supabase.from('form_templates').select('*'),
         supabase.from('form_submissions').select('*'),
+        supabase.from('signature_requests').select('*'),
         supabase.from('payroll_runs').select('*'),
       ]);
-      const firstError = [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, runsRes]
+      const firstError = [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, runsRes]
         .find(r => r.error)?.error;
       if (firstError) throw firstError;
 
@@ -88,6 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         accommodationRequests: (accomRes.data ?? []).map(rowToAccommodation),
         formTemplates: (templatesRes.data ?? []).map(rowToFormTemplate),
         formSubmissions: (submissionsRes.data ?? []).map(rowToFormSubmission),
+        signatureRequests: (sigReqRes.data ?? []).map(rowToSignatureRequest),
         payrollRuns: (runsRes.data ?? []).map(rowToPayrollRun),
         currentCompanyId: profile.companyId,
       });
@@ -293,6 +298,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         entries: nextEntries, clock_sessions: nextSessions, active_session: null,
       }).eq('id', ts.id);
       if (error) { console.error(error); refresh(); }
+    },
+
+    addSignatureRequest: async (s) => {
+      if (!profile) return null;
+      const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+      const { data: row, error } = await supabase.from('signature_requests').insert(
+        signatureRequestToRow({ ...s, companyId: profile.companyId, token, createdBy: profile.id })
+      ).select().single();
+      if (error) { console.error(error); return null; }
+      const req = rowToSignatureRequest(row);
+      setData(prev => ({ ...prev, signatureRequests: [...prev.signatureRequests, req] }));
+      return req;
     },
 
     addPayrollRun: async (r) => {

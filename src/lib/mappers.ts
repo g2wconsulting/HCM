@@ -1,6 +1,6 @@
 import type {
   Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission,
+  FormTemplate, FormSubmission, SignatureRequest,
 } from './types';
 
 export function rowToClient(r: any): Client {
@@ -228,5 +228,28 @@ export function payrollRunToRow(p: Partial<PayrollRun> & { companyId?: string })
   if (p.status !== undefined) row.status = p.status;
   if (p.lineItems !== undefined) row.line_items = p.lineItems;
   if (p.finalizedAt !== undefined) row.finalized_at = p.finalizedAt;
+  return row;
+}
+
+export function rowToSignatureRequest(r: any): SignatureRequest {
+  return {
+    id: r.id, companyId: r.company_id, employeeId: r.employee_id, timesheetIds: r.timesheet_ids ?? [],
+    rangeStart: r.range_start, rangeEnd: r.range_end, recipientName: r.recipient_name, recipientEmail: r.recipient_email,
+    token: r.token, status: r.status, signature: r.signature ?? undefined, signedAt: r.signed_at ?? undefined,
+    createdBy: r.created_by ?? null, createdAt: r.created_at,
+  };
+}
+export function signatureRequestToRow(s: Partial<SignatureRequest> & { companyId?: string; employeeId?: string }): any {
+  const row: any = {};
+  if (s.companyId !== undefined) row.company_id = s.companyId;
+  if (s.employeeId !== undefined) row.employee_id = s.employeeId;
+  if (s.timesheetIds !== undefined) row.timesheet_ids = s.timesheetIds;
+  if (s.rangeStart !== undefined) row.range_start = s.rangeStart;
+  if (s.rangeEnd !== undefined) row.range_end = s.rangeEnd;
+  if (s.recipientName !== undefined) row.recipient_name = s.recipientName;
+  if (s.recipientEmail !== undefined) row.recipient_email = s.recipientEmail;
+  if (s.token !== undefined) row.token = s.token;
+  if (s.status !== undefined) row.status = s.status;
+  if (s.createdBy !== undefined) row.created_by = s.createdBy;
   return row;
 }

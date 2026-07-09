@@ -22,6 +22,7 @@ import { PortalEmployeeDetail } from './pages/PortalEmployeeDetail';
 import { PortalTimesheets } from './pages/PortalTimesheets';
 import { PortalTimesheetDetail } from './pages/PortalTimesheetDetail';
 import { ResetPassword } from './pages/ResetPassword';
+import { SignDocument } from './pages/SignDocument';
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { session, profile, loading, error, signOut } = useAuth();
@@ -58,6 +59,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/sign/:token" element={<SignDocument />} />
           <Route path="/*" element={<GatedApp />} />
         </Routes>
       </BrowserRouter>
