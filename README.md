@@ -55,15 +55,21 @@ As admin, in the app:
   employee can be assigned to multiple projects across multiple clients,
   each with its own rate
 
-Then create logins (server-side, using the service role key):
+Then invite them (server-side, using the service role key). Set `SITE_URL`
+to your real deployed URL — the invite email links there:
 
 ```bash
-# employee login
-node scripts/create-employee-login.mjs --employee-id <uuid> --email maya@youragency.com --password "TempPass123!"
+# employee login — sends a real invite email; they set their own password
+SITE_URL=https://your-app.vercel.app \
+node scripts/create-employee-login.mjs --employee-id <uuid> --email maya@youragency.com
 
-# client portal login
-node scripts/create-client-login.mjs --client-id <uuid> --email contact@theirclientco.com --password "TempPass123!"
+# client portal login — same idea
+SITE_URL=https://your-app.vercel.app \
+node scripts/create-client-login.mjs --client-id <uuid> --email contact@theirclientco.com
 ```
+
+(You still need `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` set as
+shown in step 4 — omitted above for brevity.)
 
 Find the relevant `id` in Supabase's Table Editor (`employees` or
 `clients` table) until a copy-id button is added to the UI.

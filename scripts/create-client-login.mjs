@@ -1,16 +1,21 @@
-// Creates a login for a client (sub-company) so their team can access the
-// client portal. Run server-side with the service role key.
+// Creates a login for a client (sub-company) and sends them a real email
+// invite to set their own password. Run server-side with the service
+// role key — never in the browser.
 //
 // Usage:
 //   SUPABASE_URL=https://xxxx.supabase.co \
 //   SUPABASE_SERVICE_ROLE_KEY=eyJ... \
+//   SITE_URL=https://your-app.vercel.app \
 //   node scripts/create-client-login.mjs \
 //     --client-id <uuid from the clients table> \
-//     --email contact@theirclientcompany.com \
-//     --password "TempPassword123!"
+//     --email contact@theirclientcompany.com
 //
 // Find the client's id in Supabase Table Editor -> clients, or from the
 // app URL when an admin opens that client's page.
+//
+// SITE_URL defaults to http://localhost:5180 if not set — set it to your
+// real deployed URL (e.g. your Vercel URL) so the invite email links
+// somewhere the client can actually reach.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -21,6 +26,7 @@ function arg(name, fallback) {
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const siteUrl = process.env.SITE_URL || 'http://localhost:5180';
 if (!url || !serviceKey) {
   console.error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY environment variables first.');
   process.exit(1);
@@ -28,10 +34,9 @@ if (!url || !serviceKey) {
 
 const clientId = arg('client-id');
 const email = arg('email');
-const password = arg('password');
 
-if (!clientId || !email || !password) {
-  console.error('Usage: node scripts/create-client-login.mjs --client-id <uuid> --email you@theirco.com --password "SomePassword123!"');
+if (!clientId || !email) {
+  console.error('Usage: node scripts/create-client-login.mjs --client-id <uuid> --email you@theirco.com');
   process.exit(1);
 }
 
@@ -45,8 +50,8 @@ async function main() {
     .single();
   if (clientErr) throw clientErr;
 
-  const { data: userRes, error: userErr } = await supabase.auth.admin.createUser({
-    email, password, email_confirm: true,
+  const { data: userRes, error: userErr } = await supabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: `${siteUrl}/reset-password`,
   });
   if (userErr) throw userErr;
   const userId = userRes.user.id;
@@ -56,9 +61,8 @@ async function main() {
   });
   if (profileErr) throw profileErr;
 
-  console.log(`Client portal login created for ${clientRow.name}.`);
-  console.log(`  email:    ${email}`);
-  console.log(`  password: ${password}`);
+  console.log(`Invite sent to ${clientRow.name} at ${email}.`);
+  console.log(`They'll get an email with a link to set their own password.`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
