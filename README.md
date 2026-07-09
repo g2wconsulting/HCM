@@ -23,6 +23,7 @@ In the Supabase SQL editor, run each of these once, in order:
 3. `supabase/migration_003_forms_and_clock.sql`
 4. `supabase/migration_004_signature_requests.sql`
 5. `supabase/migration_005_project_budget.sql`
+6. `supabase/migration_006_standard_forms.sql`
 
 (All files are safe to re-run if you're ever unsure whether one applied — every `create policy` and constraint is guarded so re-running won't error.)
 
@@ -139,6 +140,70 @@ HTTPS, with `try_files $uri /index.html;` for client-side routing.
   upload) that employees fill out during onboarding under "My onboarding."
   Admins can see and manage the status; clients see it only if the admin
   leaves "visible to client" checked (on by default).
+
+## Inviting employees and clients from the app (no scripts)
+
+Adding an employee now has a checkbox: **"Email them a login invite now"**
+— check it, and they get a real invite email immediately, no CLI script
+needed. For employees added before this existed, or if you skipped the
+checkbox, there's an **"Invite to portal"** button on their profile page.
+This uses the same `invite-user` Edge Function pattern as the
+e-signature emails — deploy it once:
+
+```bash
+supabase functions deploy invite-user
+```
+
+It reuses your existing `RESEND_API_KEY` / `RESEND_FROM` secrets — nothing
+new to configure if e-signature emails are already working.
+
+The CLI scripts (`create-employee-login.mjs`, `create-client-login.mjs`,
+`create-admin-login.mjs`) still work and are handy for bulk setup — the
+in-app button is just faster for one person at a time.
+
+## Standard onboarding forms (W-4, I-9, W-9)
+
+Every company automatically has these three forms, always available,
+built to mirror the real government forms' actual sections (not just a
+generic field list): Form W-4 (steps 1–5, with the dependents credit
+computed live from qualifying children/other dependents, matching the
+real form's math), Form I-9 Section 1, and Form W-9. W-4 and I-9 are set
+to auto-assign to every new employee automatically; W-9 is available but
+not auto-assigned (it's for contractors, not most employees) — toggle
+auto-assign for any form, standard or custom, from the Forms page.
+
+**The W-4 is special-cased**: when an employee submits it, their answers
+write directly onto their own employee record — filing status, dependents
+credit, and extra withholding — the same fields payroll's tax
+calculations already use. No separate step to copy the numbers over.
+
+Custom forms you build yourself keep using the drag-free field builder
+as before; standard forms' fields are fixed (since their layout is
+purpose-built to match the real form), but you can still toggle them
+active/inactive and auto-assign.
+
+## Real signatures only for external e-signature
+
+The public signing page (what an external recipient sees) only offers
+**draw a signature** or **upload an image of your signature** — never a
+typed-name stand-in. That distinction matters for e-signature to mean
+something. (Internal quick sign-off — an employee submitting their own
+timesheet, an admin approving one — still allows typed signatures, since
+that's a different, lower-stakes use case than sending something out for
+someone else's binding signature.)
+
+When sending a timesheet for external approval, you can now choose the
+period covered — this week only (the default, since weekly is typical),
+this + last week, this + last 2 weeks, or the last 4 weeks — right from
+the timesheet page itself, no need to use the separate export flow
+unless you want a custom date range.
+
+## Grouping timesheets
+
+The Timesheets list has a **Group by** control — None, Employee, Client,
+or Project — so a growing timesheet history doesn't turn into one long
+undifferentiated table. Each group is collapsible and shows a running
+hours total.
 
 ## Sending timesheets out for external e-signature
 

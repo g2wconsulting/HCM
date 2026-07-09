@@ -3,7 +3,7 @@ import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, Field, SectionLabel, inputClass } from '../components/ui';
 import { SignaturePad, SignaturePreview } from '../components/SignaturePad';
-import { FormRenderer } from '../components/FormRenderer';
+import { StandardOrCustomForm } from '../components/StandardOrCustomForm';
 import { supabase } from '../lib/supabaseClient';
 import type { OnboardingDocStatus } from '../lib/types';
 
@@ -133,7 +133,7 @@ export function MyOnboarding() {
 }
 
 function FormsSection({ employeeId }: { employeeId: string }) {
-  const { data, updateFormSubmission } = useApp();
+  const { data, updateFormSubmission, updateEmployee } = useApp();
   const submissions = data.formSubmissions.filter(s => s.employeeId === employeeId);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string | number | boolean>>({});
@@ -147,7 +147,30 @@ function FormsSection({ employeeId }: { employeeId: string }) {
   }
 
   function submit(subId: string, sig: any) {
+    const submission = submissions.find(s => s.id === subId);
+    const template = submission ? data.formTemplates.find(t => t.id === submission.templateId) : undefined;
     updateFormSubmission(subId, { responses: draft, status: 'submitted', signature: sig, submittedAt: new Date().toISOString() });
+
+    // The W-4 is special-cased: its answers feed directly into the
+    // employee's own tax withholding setup, rather than just living as
+    // form responses — that's what "auto-populates to their profile" means.
+    if (template?.standardKind === 'w4') {
+      const filingStatusMap: Record<string, string> = {
+        'Single or Married filing separately': 'single',
+        'Married filing jointly': 'married_joint',
+        'Head of household': 'head_of_household',
+      };
+      const qualifyingChildren = Number(draft['qualifying_children']) || 0;
+      const otherDependents = Number(draft['other_dependents']) || 0;
+      const dependentsCredit = qualifyingChildren * 2000 + otherDependents * 500;
+      const filingStatus = filingStatusMap[draft['filing_status'] as string] as any;
+      updateEmployee(employeeId, {
+        ...(filingStatus ? { filingStatus } : {}),
+        dependentsCredit,
+        federalAllowancesExtraWithholding: Number(draft['extra_withholding']) || 0,
+      });
+    }
+
     setShowSignFor(null);
     setOpenId(null);
   }
@@ -174,7 +197,7 @@ function FormsSection({ employeeId }: { employeeId: string }) {
               )}
               {isOpen && (
                 <div className="mt-3 space-y-3">
-                  <FormRenderer template={template} responses={draft} onChange={(id, v) => setDraft(prev => ({ ...prev, [id]: v }))} />
+                  <StandardOrCustomForm template={template} responses={draft} onChange={(id, v) => setDraft(prev => ({ ...prev, [id]: v }))} />
                   {showSignFor === sub.id ? (
                     <SignaturePad defaultName="" onSign={(sig) => submit(sub.id, sig)} onCancel={() => setShowSignFor(null)} />
                   ) : (

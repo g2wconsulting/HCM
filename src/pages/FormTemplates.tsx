@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react';
 import { useApp } from '../lib/AppContext';
 import { Badge, Button, Card, Field, SectionLabel, inputClass } from '../components/ui';
 import { uid } from '../lib/db';
+import { StandardOrCustomForm } from '../components/StandardOrCustomForm';
 import type { FormField, FormFieldType, FormTemplate } from '../lib/types';
 
 const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
@@ -24,7 +25,7 @@ export function FormTemplates() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl">Forms</h1>
-          <p className="text-[var(--ink-soft)] mt-1">{data.formTemplates.length} custom form{data.formTemplates.length !== 1 ? 's' : ''} · build your own fields</p>
+          <p className="text-[var(--ink-soft)] mt-1">{data.formTemplates.length} form{data.formTemplates.length !== 1 ? 's' : ''} · {data.formTemplates.filter(t => t.standardKind).length} standard, build your own for the rest</p>
         </div>
         <Button onClick={() => setShowNew(true)}>+ New form</Button>
       </div>
@@ -39,6 +40,7 @@ export function FormTemplates() {
               <th className="px-5 py-3 font-semibold">Form name</th>
               <th className="px-5 py-3 font-semibold text-right">Fields</th>
               <th className="px-5 py-3 font-semibold text-right">Responses</th>
+              <th className="px-5 py-3 font-semibold">Auto-assign</th>
               <th className="px-5 py-3 font-semibold">Status</th>
               <th className="px-5 py-3"></th>
             </tr>
@@ -51,32 +53,36 @@ export function FormTemplates() {
                 <Fragment key={tpl.id}>
                   <tr className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--paper)]/60">
                     <td className="px-5 py-3">
-                      <div className="font-medium">{tpl.name}</div>
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{tpl.name}</div>
+                        {tpl.standardKind && <Badge tone="pending">standard</Badge>}
+                      </div>
                       {tpl.description && <div className="text-xs text-[var(--muted)]">{tpl.description}</div>}
                     </td>
                     <td className="px-5 py-3 text-right tabular">{tpl.fields.length}</td>
                     <td className="px-5 py-3 text-right tabular font-medium">{responseCount}</td>
+                    <td className="px-5 py-3">
+                      <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                        <input type="checkbox" checked={tpl.autoAssign} onChange={e => updateFormTemplate(tpl.id, { autoAssign: e.target.checked })} />
+                        new employees
+                      </label>
+                    </td>
                     <td className="px-5 py-3"><Badge tone={tpl.active ? 'good' : 'neutral'}>{tpl.active ? 'active' : 'archived'}</Badge></td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center gap-2 justify-end">
                         <Button size="sm" variant="secondary" onClick={() => setPreviewId(isPreviewing ? null : tpl.id)}>
                           {isPreviewing ? 'Close' : 'Preview'}
                         </Button>
-                        <Button size="sm" onClick={() => setEditingId(tpl.id)}>Edit</Button>
+                        {!tpl.standardKind && <Button size="sm" onClick={() => setEditingId(tpl.id)}>Edit</Button>}
                       </div>
                     </td>
                   </tr>
                   {isPreviewing && (
                     <tr>
-                      <td colSpan={5} className="px-5 py-4 bg-[var(--paper)]/40">
-                        <div className="space-y-1.5 max-w-md">
-                          {tpl.fields.map(f => (
-                            <div key={f.id} className="flex items-center justify-between text-sm">
-                              <span className="text-[var(--ink-soft)]">{f.label || '(untitled field)'}{f.required && <span className="text-[var(--bad)]"> *</span>}</span>
-                              <span className="text-xs text-[var(--muted)] uppercase tracking-wide">{f.type}</span>
-                            </div>
-                          ))}
-                          <button onClick={() => updateFormTemplate(tpl.id, { active: !tpl.active })} className="focus-ring text-xs text-[var(--muted)] hover:text-[var(--ink)] underline mt-2">
+                      <td colSpan={6} className="px-5 py-4 bg-[var(--paper)]/40">
+                        <div className="max-w-lg">
+                          <StandardOrCustomForm template={tpl} responses={{}} readOnly={false} onChange={() => {}} />
+                          <button onClick={() => updateFormTemplate(tpl.id, { active: !tpl.active })} className="focus-ring text-xs text-[var(--muted)] hover:text-[var(--ink)] underline mt-3">
                             {tpl.active ? 'Archive this form' : 'Reactivate this form'}
                           </button>
                         </div>
@@ -87,7 +93,7 @@ export function FormTemplates() {
               );
             })}
             {data.formTemplates.length === 0 && !showNew && (
-              <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-[var(--muted)]">No forms yet. Create one to get started.</td></tr>
+              <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-[var(--muted)]">No forms yet. Create one to get started.</td></tr>
             )}
           </tbody>
         </table>

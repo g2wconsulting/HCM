@@ -5,7 +5,7 @@ import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, Field, SectionLabel, inputClass } from '../components/ui';
 import { formatDate, initials, money } from '../lib/format';
 import { SignaturePad, SignaturePreview } from '../components/SignaturePad';
-import { FormRenderer } from '../components/FormRenderer';
+import { StandardOrCustomForm } from '../components/StandardOrCustomForm';
 import { uid } from '../lib/db';
 import { supabase } from '../lib/supabaseClient';
 import type { EmployeeRate, FilingStatus, OnboardingDocStatus, USState } from '../lib/types';
@@ -81,6 +81,7 @@ export function EmployeeDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <InviteControl employeeId={employee.id} defaultEmail={employee.email} />
           <select value={employee.status} onChange={e => updateEmployee(employee.id, { status: e.target.value as any })}
             className="focus-ring rounded-md border border-[var(--border)] bg-white px-3 py-1.5 text-sm">
             <option value="onboarding">Onboarding</option>
@@ -268,7 +269,7 @@ function FormsCard({ employeeId }: { employeeId: string }) {
               </div>
               {sub.status === 'submitted' && template && (
                 <div className="mt-2 pl-3 border-l-2 border-[var(--border-soft)]">
-                  <FormRenderer template={template} responses={sub.responses} readOnly />
+                  <StandardOrCustomForm template={template} responses={sub.responses} readOnly />
                 </div>
               )}
               <label className="flex items-center gap-2 text-xs text-[var(--muted)] mt-2">
@@ -430,6 +431,43 @@ function AddProjectInline({ companyId, onCreate }: { companyId: string; onCreate
         onCreate({ companyId, name: name.trim(), code: name.trim().slice(0, 6).toUpperCase(), active: true });
         setName(''); setOpen(false);
       }}>Add</Button>
+    </div>
+  );
+}
+
+function InviteControl({ employeeId, defaultEmail }: { employeeId: string; defaultEmail: string }) {
+  const { data, inviteUser } = useApp();
+  const [showForm, setShowForm] = useState(false);
+  const [email, setEmail] = useState(defaultEmail);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasLogin = data.profiles.some(p => p.employeeId === employeeId);
+
+  if (hasLogin) {
+    return <Badge tone="good">has login</Badge>;
+  }
+
+  async function send() {
+    if (!email.trim()) return;
+    setSending(true);
+    setError(null);
+    const res = await inviteUser({ type: 'employee', targetId: employeeId, email: email.trim() });
+    setSending(false);
+    if (!res.success) { setError(res.error ?? 'Could not send invite.'); return; }
+    setShowForm(false);
+  }
+
+  if (!showForm) {
+    return <Button size="sm" variant="secondary" onClick={() => setShowForm(true)}>Invite to portal</Button>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@company.com" className="focus-ring rounded-md border border-[var(--border)] px-2 py-1.5 text-sm w-52" />
+      <Button size="sm" onClick={send} disabled={sending || !email.trim()}>{sending ? 'Sending…' : 'Send invite'}</Button>
+      <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
+      {error && <span className="text-xs text-[var(--bad)]">{error}</span>}
     </div>
   );
 }

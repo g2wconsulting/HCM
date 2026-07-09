@@ -5,7 +5,7 @@ import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, SectionLabel, inputClass } from '../components/ui';
 import { formatDate, initials } from '../lib/format';
 import { supabase } from '../lib/supabaseClient';
-import { FormRenderer } from '../components/FormRenderer';
+import { StandardOrCustomForm } from '../components/StandardOrCustomForm';
 
 export function PortalEmployeeDetail() {
   const { id } = useParams();
@@ -121,7 +121,7 @@ function FormsSharedCard({ employeeId }: { employeeId: string }) {
           return (
             <div key={sub.id} className="border border-[var(--border-soft)] rounded-lg p-3">
               <div className="text-sm font-medium mb-2">{template.name}</div>
-              <FormRenderer template={template} responses={sub.responses} readOnly />
+              <StandardOrCustomForm template={template} responses={sub.responses} readOnly />
             </div>
           );
         })}

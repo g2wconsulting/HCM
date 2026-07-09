@@ -28,6 +28,13 @@ function clientLabelFor(ts: { entries: { projectId: string | null }[] }, project
   return clients.find(c => c.id === [...clientIds][0])?.name ?? 'Internal';
 }
 
+function projectLabelFor(ts: { entries: { projectId: string | null }[] }, projects: { id: string; name: string }[]): string {
+  const projectIds = new Set(ts.entries.map(e => e.projectId).filter(Boolean) as string[]);
+  if (projectIds.size === 0) return 'Unassigned';
+  if (projectIds.size > 1) return 'Multiple projects';
+  return projects.find(p => p.id === [...projectIds][0])?.name ?? 'Unassigned';
+}
+
 function mondayOf(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
@@ -45,6 +52,8 @@ export function Timesheets() {
   const isAdmin = profile?.role === 'admin';
   const [filter, setFilter] = useState<'all' | TimesheetStatus>('all');
   const [employeeFilter, setEmployeeFilter] = useState<string>('all');
+  const [groupBy, setGroupBy] = useState<'none' | 'employee' | 'project' | 'client'>('none');
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showNew, setShowNew] = useState(false);
   const [showExport, setShowExport] = useState(false);
 
@@ -59,6 +68,33 @@ export function Timesheets() {
       .filter(t => employeeFilter === 'all' || t.employeeId === employeeFilter)
       .sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
   }, [visibleTimesheets, filter, employeeFilter]);
+
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return null;
+    const map = new Map<string, typeof rows>();
+    for (const ts of rows) {
+      let key: string;
+      if (groupBy === 'employee') {
+        const emp = data.employees.find(e => e.id === ts.employeeId);
+        key = emp ? `${emp.firstName} ${emp.lastName}` : 'Unknown employee';
+      } else if (groupBy === 'client') {
+        key = clientLabelFor(ts, data.projects, data.clients);
+      } else {
+        key = projectLabelFor(ts, data.projects);
+      }
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ts);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [rows, groupBy, data.employees, data.projects, data.clients]);
+
+  function toggleGroup(key: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   async function createTimesheet(employeeId: string, weekStartInput: string) {
     const monday = mondayOf(new Date(weekStartInput + 'T00:00:00'));
@@ -122,62 +158,114 @@ export function Timesheets() {
           <option value="all">All employees</option>
           {data.employees.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
         </select>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-[var(--muted)]">Group by</span>
+          <select value={groupBy} onChange={e => setGroupBy(e.target.value as any)} className="focus-ring rounded-md border border-[var(--border)] bg-white px-3 py-1.5 text-sm">
+            <option value="none">None</option>
+            <option value="employee">Employee</option>
+            <option value="client">Client</option>
+            <option value="project">Project</option>
+          </select>
+        </div>
       </div>
 
-      <Card className="!p-0 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-[var(--muted)] border-b border-[var(--border)]">
-              <th className="px-5 py-3 font-semibold">Employee</th>
-              <th className="px-5 py-3 font-semibold">Client</th>
-              <th className="px-5 py-3 font-semibold">Week</th>
-              <th className="px-5 py-3 font-semibold text-right">Hours</th>
-              <th className="px-5 py-3 font-semibold">Status</th>
-              <th className="px-5 py-3"></th>
-              <th className="px-5 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(ts => {
-              const emp = data.employees.find(e => e.id === ts.employeeId);
-              const total = ts.entries.reduce((s, e) => s + e.hours, 0);
-              return (
-                <tr key={ts.id} className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--paper)]/60">
-                  <td className="px-5 py-3 font-medium">{emp?.firstName} {emp?.lastName}</td>
-                  <td className="px-5 py-3 text-[var(--ink-soft)]">{clientLabelFor(ts, data.projects, data.clients)}</td>
-                  <td className="px-5 py-3 text-[var(--ink-soft)]">{formatDate(ts.weekStartDate)} – {formatDate(ts.weekEndDate)}</td>
-                  <td className="px-5 py-3 text-right tabular">{fmtHours(total)}</td>
-                  <td className="px-5 py-3"><Badge tone={STATUS_TONE[ts.status]}>{ts.status}</Badge></td>
-                  <td className="px-5 py-3 text-right">
-                    <button
-                      onClick={() => emp && exportTimesheetCsv({ timesheet: ts, employeeName: `${emp.firstName} ${emp.lastName}`, employeeLastName: emp.lastName, projects: data.projects })}
-                      className="focus-ring text-[var(--ink-soft)] hover:text-[var(--ink)] text-sm font-medium"
-                      title="Export this timesheet as CSV"
-                    >
-                      CSV
-                    </button>
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <Link to={`/timesheets/${ts.id}`} className="focus-ring text-[var(--accent)] font-medium hover:underline">
-                      {ts.status === 'submitted' ? 'Review →' : 'View →'}
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr><td colSpan={7} className="p-0">
-                <EmptyState
-                  icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>}
-                  title="No timesheets match these filters"
-                  subtitle={isAdmin ? "Try a different status or employee, or create a new timesheet above." : "Try a different status, or start this week's timesheet above."}
-                />
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
+      {groups ? (
+        <div className="space-y-3">
+          {groups.map(([key, groupRows]) => {
+            const isCollapsed = collapsed.has(key);
+            const totalHours = groupRows.reduce((s, ts) => s + ts.entries.reduce((s2, e) => s2 + e.hours, 0), 0);
+            return (
+              <Card key={key} className="!p-0 overflow-hidden">
+                <button
+                  onClick={() => toggleGroup(key)}
+                  className="focus-ring w-full flex items-center justify-between px-5 py-3 hover:bg-[var(--paper)]/60 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[var(--muted)] transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▸</span>
+                    <span className="font-medium">{key}</span>
+                    <span className="text-xs text-[var(--muted)]">{groupRows.length} timesheet{groupRows.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <span className="text-sm tabular font-medium text-[var(--ink-soft)]">{fmtHours(totalHours)} hrs</span>
+                </button>
+                {!isCollapsed && <TimesheetTable rows={groupRows} showEmpty={false} />}
+              </Card>
+            );
+          })}
+          {rows.length === 0 && (
+            <Card className="!p-0">
+              <EmptyState
+                icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>}
+                title="No timesheets match these filters"
+                subtitle={isAdmin ? "Try a different status or employee, or create a new timesheet above." : "Try a different status, or start this week's timesheet above."}
+              />
+            </Card>
+          )}
+        </div>
+      ) : (
+        <Card className="!p-0 overflow-hidden">
+          <TimesheetTable rows={rows} showEmpty />
+        </Card>
+      )}
     </div>
+  );
+}
+
+function TimesheetTable({ rows, showEmpty }: { rows: any[]; showEmpty: boolean }) {
+  const { data } = useApp();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs uppercase tracking-wide text-[var(--muted)] border-b border-[var(--border)]">
+          <th className="px-5 py-3 font-semibold">Employee</th>
+          <th className="px-5 py-3 font-semibold">Client</th>
+          <th className="px-5 py-3 font-semibold">Week</th>
+          <th className="px-5 py-3 font-semibold text-right">Hours</th>
+          <th className="px-5 py-3 font-semibold">Status</th>
+          <th className="px-5 py-3"></th>
+          <th className="px-5 py-3"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(ts => {
+          const emp = data.employees.find(e => e.id === ts.employeeId);
+          const total = ts.entries.reduce((s: number, e: any) => s + e.hours, 0);
+          return (
+            <tr key={ts.id} className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--paper)]/60">
+              <td className="px-5 py-3 font-medium">{emp?.firstName} {emp?.lastName}</td>
+              <td className="px-5 py-3 text-[var(--ink-soft)]">{clientLabelFor(ts, data.projects, data.clients)}</td>
+              <td className="px-5 py-3 text-[var(--ink-soft)]">{formatDate(ts.weekStartDate)} – {formatDate(ts.weekEndDate)}</td>
+              <td className="px-5 py-3 text-right tabular">{fmtHours(total)}</td>
+              <td className="px-5 py-3"><Badge tone={STATUS_TONE[ts.status as TimesheetStatus]}>{ts.status}</Badge></td>
+              <td className="px-5 py-3 text-right">
+                <button
+                  onClick={() => emp && exportTimesheetCsv({ timesheet: ts, employeeName: `${emp.firstName} ${emp.lastName}`, employeeLastName: emp.lastName, projects: data.projects })}
+                  className="focus-ring text-[var(--ink-soft)] hover:text-[var(--ink)] text-sm font-medium"
+                  title="Export this timesheet as CSV"
+                >
+                  CSV
+                </button>
+              </td>
+              <td className="px-5 py-3 text-right">
+                <Link to={`/timesheets/${ts.id}`} className="focus-ring text-[var(--accent)] font-medium hover:underline">
+                  {ts.status === 'submitted' ? 'Review →' : 'View →'}
+                </Link>
+              </td>
+            </tr>
+          );
+        })}
+        {rows.length === 0 && showEmpty && (
+          <tr><td colSpan={7} className="p-0">
+            <EmptyState
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>}
+              title="No timesheets match these filters"
+              subtitle={isAdmin ? "Try a different status or employee, or create a new timesheet above." : "Try a different status, or start this week's timesheet above."}
+            />
+          </td></tr>
+        )}
+      </tbody>
+    </table>
   );
 }
 

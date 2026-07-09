@@ -14,7 +14,7 @@ function mondayIso(date: Date): string {
 }
 
 export function Employees() {
-  const { data, addEmployee } = useApp();
+  const { data } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -113,7 +113,6 @@ export function Employees() {
       {showNew && (
         <NewEmployeeModal
           onClose={() => setShowNew(false)}
-          onCreate={(e) => { addEmployee(e); setShowNew(false); }}
           companyId={data.currentCompanyId!}
         />
       )}
@@ -126,7 +125,8 @@ function StatusBadge({ status }: { status: Employee['status'] }) {
   return <Badge tone={tone as any}>{status}</Badge>;
 }
 
-function NewEmployeeModal({ onClose, onCreate, companyId }: { onClose: () => void; onCreate: (e: Omit<Employee, 'id' | 'createdAt'>) => void; companyId: string }) {
+function NewEmployeeModal({ onClose, companyId }: { onClose: () => void; companyId: string }) {
+  const { addEmployee, inviteUser } = useApp();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -134,10 +134,15 @@ function NewEmployeeModal({ onClose, onCreate, companyId }: { onClose: () => voi
   const [payType, setPayType] = useState<'hourly' | 'salary'>('hourly');
   const [rate, setRate] = useState('50');
   const [state, setState] = useState('OR');
+  const [sendInvite, setSendInvite] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function create() {
+  async function create() {
     if (!firstName || !lastName) return;
-    onCreate({
+    setCreating(true);
+    setError(null);
+    const created = await addEmployee({
       companyId, firstName, lastName, email, title: title || 'Team Member',
       status: 'onboarding', payType, state: state as any, filingStatus: 'single',
       federalAllowancesExtraWithholding: 0, dependentsCredit: 0,
@@ -145,6 +150,18 @@ function NewEmployeeModal({ onClose, onCreate, companyId }: { onClose: () => voi
       salaryAnnual: payType === 'salary' ? parseFloat(rate) || 0 : undefined,
       hireDate: new Date().toISOString().slice(0, 10), rates: [], projectIds: [],
     } as any);
+    if (!created) { setError('Could not create employee.'); setCreating(false); return; }
+
+    if (sendInvite && email.trim()) {
+      const res = await inviteUser({ type: 'employee', targetId: created.id, email: email.trim() });
+      if (!res.success) {
+        setError(`Employee created, but the invite failed to send: ${res.error}. You can invite them later from their profile.`);
+        setCreating(false);
+        return;
+      }
+    }
+    setCreating(false);
+    onClose();
   }
 
   return (
@@ -165,9 +182,14 @@ function NewEmployeeModal({ onClose, onCreate, companyId }: { onClose: () => voi
           <input placeholder={payType === 'hourly' ? 'Rate/hr' : 'Salary/yr'} value={rate} onChange={e => setRate(e.target.value)} className="focus-ring rounded-md border border-[var(--border)] px-3 py-2 text-sm" />
           <input placeholder="State (e.g. OR)" value={state} onChange={e => setState(e.target.value.toUpperCase())} maxLength={2} className="focus-ring rounded-md border border-[var(--border)] px-3 py-2 text-sm" />
         </div>
+        <label className="flex items-center gap-2 text-sm text-[var(--ink-soft)]">
+          <input type="checkbox" checked={sendInvite} onChange={e => setSendInvite(e.target.checked)} />
+          Email them a login invite now (with W-4, I-9, and onboarding forms)
+        </label>
+        {error && <div className="rounded-lg bg-[var(--bad-soft)] border border-[var(--bad)]/20 px-3 py-2 text-sm text-[var(--bad)]">{error}</div>}
         <div className="flex gap-2 justify-end pt-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={create}>Create employee</Button>
+          <Button onClick={create} disabled={creating}>{creating ? 'Creating…' : 'Create employee'}</Button>
         </div>
       </div>
     </div>

@@ -39,8 +39,8 @@ export interface OnboardingDocument {
 
 export interface SignatureRecord {
   name: string;
-  method: 'typed' | 'drawn';
-  dataUrl?: string; // for drawn signatures
+  method: 'typed' | 'drawn' | 'uploaded';
+  dataUrl?: string; // for drawn or uploaded signatures
   typedFont?: string;
   signedAt: string;
   ip?: string; // placeholder, not actually captured
@@ -221,6 +221,8 @@ export interface FormTemplate {
   description?: string;
   fields: FormField[];
   active: boolean;
+  standardKind?: 'w4' | 'i9' | 'w9' | null;
+  autoAssign: boolean;
   createdAt: string;
 }
 
@@ -258,6 +260,15 @@ export interface SignatureRequest {
   createdAt: string;
 }
 
+export interface ProfileSummary {
+  id: string;
+  companyId: string;
+  role: 'admin' | 'employee' | 'client';
+  employeeId: string | null;
+  clientId: string | null;
+  email: string;
+}
+
 export interface AppData {
   companies: Company[];
   clients: Client[];
@@ -270,6 +281,7 @@ export interface AppData {
   formTemplates: FormTemplate[];
   formSubmissions: FormSubmission[];
   signatureRequests: SignatureRequest[];
+  profiles: ProfileSummary[];
   payrollRuns: PayrollRun[];
   currentCompanyId: string | null;
 }

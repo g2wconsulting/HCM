@@ -10,7 +10,7 @@ import {
   rowToTimesheet, timesheetToRow, rowToDoc, docToRow, rowToPayrollRun, payrollRunToRow,
   rowToClient, clientToRow, rowToNote, noteToRow, rowToAccommodation, accommodationToRow,
   rowToFormTemplate, formTemplateToRow, rowToFormSubmission, formSubmissionToRow,
-  rowToSignatureRequest, signatureRequestToRow,
+  rowToSignatureRequest, signatureRequestToRow, rowToProfileSummary,
 } from './mappers';
 
 interface AppContextValue {
@@ -40,6 +40,7 @@ interface AppContextValue {
   clockIn: (params: { employeeId: string; projectId: string | null }) => Promise<void>;
   clockOut: (timesheetId: string) => Promise<void>;
   addSignatureRequest: (s: Omit<SignatureRequest, 'id' | 'createdAt' | 'status'>) => Promise<SignatureRequest | null>;
+  inviteUser: (params: { type: 'employee' | 'client'; targetId: string; email: string }) => Promise<{ success: boolean; error?: string }>;
   addPayrollRun: (r: Omit<PayrollRun, 'id' | 'createdAt'>) => Promise<PayrollRun | null>;
   updatePayrollRun: (id: string, patch: Partial<PayrollRun>) => Promise<void>;
 }
@@ -47,7 +48,7 @@ interface AppContextValue {
 const emptyData: AppData = {
   companies: [], clients: [], employees: [], projects: [], timesheets: [], onboardingDocs: [],
   notes: [], accommodationRequests: [], formTemplates: [], formSubmissions: [], signatureRequests: [],
-  payrollRuns: [], currentCompanyId: null,
+  profiles: [], payrollRuns: [], currentCompanyId: null,
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -63,7 +64,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, runsRes] = await Promise.all([
+      const [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, profilesRes, runsRes] = await Promise.all([
         supabase.from('companies').select('*').eq('id', profile.companyId),
         supabase.from('clients').select('*'),
         supabase.from('employees').select('*'),
@@ -75,6 +76,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabase.from('form_templates').select('*'),
         supabase.from('form_submissions').select('*'),
         supabase.from('signature_requests').select('*'),
+        supabase.from('profiles').select('*'),
         supabase.from('payroll_runs').select('*'),
       ]);
 
@@ -96,6 +98,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       warn('form_templates', templatesRes.error);
       warn('form_submissions', submissionsRes.error);
       warn('signature_requests', sigReqRes.error);
+      warn('profiles', profilesRes.error);
       warn('payroll_runs', runsRes.error);
 
       setData({
@@ -110,6 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         formTemplates: (templatesRes.data ?? []).map(rowToFormTemplate),
         formSubmissions: (submissionsRes.data ?? []).map(rowToFormSubmission),
         signatureRequests: (sigReqRes.data ?? []).map(rowToSignatureRequest),
+        profiles: (profilesRes.data ?? []).map(rowToProfileSummary),
         payrollRuns: (runsRes.data ?? []).map(rowToPayrollRun),
         currentCompanyId: profile.companyId,
       });
@@ -143,6 +147,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (error) { console.error(error); return null; }
       const employee = rowToEmployee(row);
       setData(prev => ({ ...prev, employees: [...prev.employees, employee] }));
+
+      // Auto-assign any form templates flagged auto_assign (the standard
+      // W-4/I-9, and any custom ones an admin has opted in) as pending
+      // submissions for this new employee.
+      const autoAssignTemplates = data.formTemplates.filter(t => t.active && t.autoAssign);
+      if (autoAssignTemplates.length > 0) {
+        const rows = autoAssignTemplates.map(t => formSubmissionToRow({
+          companyId: profile.companyId, templateId: t.id, employeeId: employee.id,
+          responses: {}, status: 'pending', visibleToClient: false,
+        }));
+        const { data: subRows, error: subErr } = await supabase.from('form_submissions').insert(rows).select();
+        if (subErr) console.error('Could not auto-assign onboarding forms', subErr);
+        else setData(prev => ({ ...prev, formSubmissions: [...prev.formSubmissions, ...(subRows ?? []).map(rowToFormSubmission)] }));
+      }
+
       return employee;
     },
     updateEmployee: async (id, patch) => {
@@ -327,6 +346,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const req = rowToSignatureRequest(row);
       setData(prev => ({ ...prev, signatureRequests: [...prev.signatureRequests, req] }));
       return req;
+    },
+
+    inviteUser: async ({ type, targetId, email }) => {
+      try {
+        const { data: res, error } = await supabase.functions.invoke('invite-user', {
+          body: { type, targetId, email, siteUrl: window.location.origin },
+        });
+        if (error) return { success: false, error: error.message };
+        if ((res as any)?.error) return { success: false, error: (res as any).error };
+        await refresh();
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err?.message ?? 'Unknown error' };
+      }
     },
 
     addPayrollRun: async (r) => {

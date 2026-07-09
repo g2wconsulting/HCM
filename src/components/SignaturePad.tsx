@@ -4,21 +4,34 @@ import { Button } from './ui';
 
 const TYPED_FONTS = ["'Fraunces', serif", "'IBM Plex Mono', monospace", "cursive"];
 
+type Mode = 'typed' | 'drawn' | 'uploaded';
+
 export function SignaturePad({
-  defaultName, onSign, onCancel,
+  defaultName, onSign, onCancel, allowedModes,
 }: {
   defaultName: string;
   onSign: (sig: SignatureRecord) => void;
   onCancel?: () => void;
+  /** Which signing methods to offer. Defaults to typed + drawn (internal,
+   * quick sign-off use). For a document going out for real external
+   * e-signature, pass ['drawn', 'uploaded'] — a genuine hand signature,
+   * either drawn live or an image of a real signature, never plain typed
+   * text standing in for one. */
+  allowedModes?: Mode[];
 }) {
-  const [mode, setMode] = useState<'typed' | 'drawn'>('typed');
+  const modes = allowedModes ?? ['typed', 'drawn'];
+  const [mode, setMode] = useState<Mode>(modes[0]);
   const [name, setName] = useState(defaultName);
   const [fontIdx, setFontIdx] = useState(0);
+  const [uploadedDataUrl, setUploadedDataUrl] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const drawing = useRef(false);
   const hasDrawn = useRef(false);
 
   useEffect(() => {
+    if (mode !== 'drawn') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -62,24 +75,49 @@ export function SignaturePad({
     }
   }
 
+  function handleFileUpload(file: File) {
+    setUploadError(null);
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please upload an image file (PNG or JPG) of your signature.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setUploadedDataUrl(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
   function submit() {
     if (mode === 'typed') {
       if (!name.trim()) return;
       onSign({ name: name.trim(), method: 'typed', typedFont: TYPED_FONTS[fontIdx], signedAt: new Date().toISOString() });
-    } else {
+    } else if (mode === 'drawn') {
       if (!hasDrawn.current || !canvasRef.current) return;
       onSign({ name: name.trim() || defaultName, method: 'drawn', dataUrl: canvasRef.current.toDataURL('image/png'), signedAt: new Date().toISOString() });
+    } else {
+      if (!uploadedDataUrl) return;
+      onSign({ name: name.trim() || defaultName, method: 'uploaded', dataUrl: uploadedDataUrl, signedAt: new Date().toISOString() });
     }
   }
 
+  const modeLabels: Record<Mode, string> = { typed: 'Type signature', drawn: 'Draw signature', uploaded: 'Upload signature' };
+
   return (
     <div className="ledger-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={() => setMode('typed')} className={`focus-ring px-3 py-1.5 rounded-md text-sm font-medium border ${mode === 'typed' ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-dark)]' : 'border-[var(--border)] text-[var(--ink-soft)]'}`}>Type signature</button>
-        <button onClick={() => setMode('drawn')} className={`focus-ring px-3 py-1.5 rounded-md text-sm font-medium border ${mode === 'drawn' ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-dark)]' : 'border-[var(--border)] text-[var(--ink-soft)]'}`}>Draw signature</button>
-      </div>
+      {modes.length > 1 && (
+        <div className="flex items-center gap-2 mb-4">
+          {modes.map(m => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`focus-ring px-3 py-1.5 rounded-md text-sm font-medium border ${mode === m ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-dark)]' : 'border-[var(--border)] text-[var(--ink-soft)]'}`}
+            >
+              {modeLabels[m]}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {mode === 'typed' ? (
+      {mode === 'typed' && (
         <div className="space-y-3">
           <input
             value={name}
@@ -102,8 +140,16 @@ export function SignaturePad({
             ))}
           </div>
         </div>
-      ) : (
+      )}
+
+      {mode === 'drawn' && (
         <div className="space-y-3">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Full legal name"
+            className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+          />
           <canvas
             ref={canvasRef}
             width={480}
@@ -115,6 +161,38 @@ export function SignaturePad({
             className="w-full touch-none rounded-md border border-dashed border-[var(--border)] bg-white"
           />
           <button onClick={clearCanvas} className="focus-ring text-sm text-[var(--muted)] hover:text-[var(--ink)] underline">Clear</button>
+        </div>
+      )}
+
+      {mode === 'uploaded' && (
+        <div className="space-y-3">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Full legal name"
+            className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+          />
+          {uploadedDataUrl ? (
+            <div className="rounded-md border border-dashed border-[var(--border)] bg-white px-4 py-4 flex flex-col items-center gap-2">
+              <img src={uploadedDataUrl} alt="Uploaded signature" className="max-h-24" />
+              <button onClick={() => fileInputRef.current?.click()} className="focus-ring text-xs text-[var(--accent)] hover:underline">Choose a different image</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="focus-ring w-full rounded-md border-2 border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+            >
+              Upload an image of your signature (PNG or JPG)
+            </button>
+          )}
+          {uploadError && <p className="text-xs text-[var(--bad)]">{uploadError}</p>}
         </div>
       )}
 

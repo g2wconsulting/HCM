@@ -1,6 +1,6 @@
 import type {
   Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission, SignatureRequest,
+  FormTemplate, FormSubmission, SignatureRequest, ProfileSummary,
 } from './types';
 
 export function rowToClient(r: any): Client {
@@ -162,7 +162,8 @@ export function timesheetToRow(t: Partial<Timesheet> & { companyId?: string; emp
 export function rowToFormTemplate(r: any): FormTemplate {
   return {
     id: r.id, companyId: r.company_id, name: r.name, description: r.description ?? undefined,
-    fields: r.fields ?? [], active: r.active, createdAt: r.created_at,
+    fields: r.fields ?? [], active: r.active, standardKind: r.standard_kind ?? null, autoAssign: r.auto_assign ?? false,
+    createdAt: r.created_at,
   };
 }
 export function formTemplateToRow(f: Partial<FormTemplate> & { companyId?: string }): any {
@@ -172,7 +173,16 @@ export function formTemplateToRow(f: Partial<FormTemplate> & { companyId?: strin
   if (f.description !== undefined) row.description = f.description;
   if (f.fields !== undefined) row.fields = f.fields;
   if (f.active !== undefined) row.active = f.active;
+  if (f.standardKind !== undefined) row.standard_kind = f.standardKind;
+  if (f.autoAssign !== undefined) row.auto_assign = f.autoAssign;
   return row;
+}
+
+export function rowToProfileSummary(r: any): ProfileSummary {
+  return {
+    id: r.id, companyId: r.company_id, role: r.role, employeeId: r.employee_id ?? null,
+    clientId: r.client_id ?? null, email: r.email,
+  };
 }
 
 export function rowToFormSubmission(r: any): FormSubmission {

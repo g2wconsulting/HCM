@@ -165,22 +165,27 @@ function SendForSignatureModal({
     if (!name.trim() || !email.trim() || timesheetIds.length === 0) return;
     setSubmitting(true);
     setError(null);
-    const created = await addSignatureRequest({
-      employeeId, timesheetIds, rangeStart, rangeEnd,
-      recipientName: name.trim(), recipientEmail: email.trim(),
-    } as any);
-    if (!created) { setError('Could not create the signature request.'); setSubmitting(false); return; }
+    try {
+      const created = await addSignatureRequest({
+        employeeId, timesheetIds, rangeStart, rangeEnd,
+        recipientName: name.trim(), recipientEmail: email.trim(),
+      } as any);
+      if (!created) { setError('Could not create the signature request — check the browser console for details.'); return; }
 
-    const { data: fnRes, error: fnErr } = await supabase.functions.invoke('send-signature-request', {
-      body: { requestId: created.id, siteUrl: window.location.origin },
-    });
-    setSubmitting(false);
-    if (fnErr || (fnRes as any)?.error) {
-      setError(`Request saved, but the email failed to send: ${fnErr?.message ?? (fnRes as any)?.error}. Check that the Edge Function is deployed and RESEND_API_KEY is set (see README).`);
-      return;
+      const { data: fnRes, error: fnErr } = await supabase.functions.invoke('send-signature-request', {
+        body: { requestId: created.id, siteUrl: window.location.origin },
+      });
+      if (fnErr || (fnRes as any)?.error) {
+        setError(`Request saved, but the email failed to send: ${fnErr?.message ?? (fnRes as any)?.error}. This usually means the send-signature-request Edge Function hasn't been deployed yet, or RESEND_API_KEY isn't set — see the README's "Sending timesheets out for external e-signature" section.`);
+        return;
+      }
+      onSent(`Sent to ${name.trim()} at ${email.trim()}. You'll see their status update here once they view or sign.`);
+      onClose();
+    } catch (err: any) {
+      setError(`Something went wrong: ${err?.message ?? 'unknown error'}. This usually means the send-signature-request Edge Function hasn't been deployed yet — see the README's "Sending timesheets out for external e-signature" section.`);
+    } finally {
+      setSubmitting(false);
     }
-    onSent(`Sent to ${name.trim()} at ${email.trim()}. You'll see their status update here once they view or sign.`);
-    onClose();
   }
 
   return (

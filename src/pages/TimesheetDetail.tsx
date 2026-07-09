@@ -212,7 +212,7 @@ export function TimesheetDetail() {
       </div>
 
       {isAdmin && ts.status !== 'paid' && (
-        <SendForApprovalCard employeeId={employee.id} timesheetId={ts.id} rangeStart={ts.weekStartDate} rangeEnd={ts.weekEndDate} clientApprovedAt={ts.clientApprovedAt} />
+        <SendForApprovalCard employeeId={employee.id} currentTimesheet={ts} clientApprovedAt={ts.clientApprovedAt} />
       )}
 
       <div className="grid grid-cols-2 gap-4">
@@ -297,37 +297,64 @@ export function TimesheetDetail() {
 }
 
 function SendForApprovalCard({
-  employeeId, timesheetId, rangeStart, rangeEnd, clientApprovedAt,
+  employeeId, currentTimesheet, clientApprovedAt,
 }: {
-  employeeId: string; timesheetId: string; rangeStart: string; rangeEnd: string; clientApprovedAt?: string;
+  employeeId: string; currentTimesheet: any; clientApprovedAt?: string;
 }) {
   const { data, addSignatureRequest } = useApp();
   const [showNote, setShowNote] = useState(false);
   const [note, setNote] = useState('');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
+  const [rangeStart, setRangeStart] = useState(currentTimesheet.weekStartDate);
+  const [rangeEnd, setRangeEnd] = useState(currentTimesheet.weekEndDate);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
-  const pastRequests = data.signatureRequests.filter(r => r.timesheetIds.includes(timesheetId));
+  function applyPreset(weeksBack: number) {
+    const end = new Date(currentTimesheet.weekEndDate + 'T00:00:00');
+    const start = new Date(currentTimesheet.weekStartDate + 'T00:00:00');
+    start.setDate(start.getDate() - (weeksBack - 1) * 7);
+    setRangeStart(start.toISOString().slice(0, 10));
+    setRangeEnd(end.toISOString().slice(0, 10));
+  }
+
+  // Any timesheet whose week overlaps the chosen range counts — this
+  // works regardless of how a given client's work week is defined,
+  // since we're not assuming the range lines up to fixed week boundaries.
+  const includedTimesheets = data.timesheets
+    .filter((t: any) => t.employeeId === employeeId && t.weekEndDate >= rangeStart && t.weekStartDate <= rangeEnd)
+    .sort((a: any, b: any) => a.weekStartDate.localeCompare(b.weekStartDate));
+  const timesheetIds = includedTimesheets.map((t: any) => t.id);
+
+  const pastRequests = data.signatureRequests.filter(r => r.timesheetIds.includes(currentTimesheet.id));
   const latest = pastRequests[pastRequests.length - 1];
 
   async function send() {
-    if (!email.trim()) return;
+    if (!email.trim() || timesheetIds.length === 0) return;
     setSubmitting(true);
     setStatus(null);
-    const created = await addSignatureRequest({
-      employeeId, timesheetIds: [timesheetId], rangeStart, rangeEnd,
-      recipientName: name.trim() || email.trim(), recipientEmail: email.trim(),
-    } as any);
-    if (!created) { setStatus('Could not create the signature request.'); setSubmitting(false); return; }
-    const { error: fnErr } = await supabase.functions.invoke('send-signature-request', {
-      body: { requestId: created.id, siteUrl: window.location.origin },
-    });
-    setSubmitting(false);
-    if (fnErr) { setStatus(`Saved, but the email failed to send: ${fnErr.message}. Check the Edge Function is deployed (see README).`); return; }
-    setStatus(`Sent to ${email.trim()}.`);
-    setEmail(''); setName(''); setNote(''); setShowNote(false);
+    try {
+      const created = await addSignatureRequest({
+        employeeId, timesheetIds, rangeStart, rangeEnd,
+        recipientName: name.trim() || email.trim(), recipientEmail: email.trim(),
+      } as any);
+      if (!created) { setStatus('Could not create the signature request — check the browser console for details.'); return; }
+
+      const { error: fnErr } = await supabase.functions.invoke('send-signature-request', {
+        body: { requestId: created.id, siteUrl: window.location.origin },
+      });
+      if (fnErr) {
+        setStatus(`Saved, but the email failed to send: ${fnErr.message}. This usually means the send-signature-request Edge Function hasn't been deployed yet, or RESEND_API_KEY isn't set — see the README's "Sending timesheets out for external e-signature" section.`);
+        return;
+      }
+      setStatus(`Sent to ${email.trim()}.`);
+      setEmail(''); setName(''); setNote(''); setShowNote(false);
+    } catch (err: any) {
+      setStatus(`Something went wrong: ${err?.message ?? 'unknown error'}. This usually means the send-signature-request Edge Function hasn't been deployed yet — see the README's "Sending timesheets out for external e-signature" section.`);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -339,7 +366,8 @@ function SendForApprovalCard({
         <div className="min-w-0 flex-1">
           <div className="font-medium">Send for external approval</div>
           <p className="text-sm text-[var(--muted)] mt-0.5">
-            Send a secure signing link to a hiring manager — no Ledgerline account required.
+            Send a secure signing link to a hiring manager — no Ledgerline account required. They sign with a real
+            signature (drawn or uploaded) — no typed stand-in.
           </p>
 
           {clientApprovedAt ? (
@@ -348,9 +376,30 @@ function SendForApprovalCard({
             </div>
           ) : (
             <div className="mt-4 space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-[var(--muted)] shrink-0">Quick pick:</span>
+                <button onClick={() => applyPreset(1)} className="focus-ring px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--ink-soft)] hover:bg-[var(--paper)]">This week</button>
+                <button onClick={() => applyPreset(2)} className="focus-ring px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--ink-soft)] hover:bg-[var(--paper)]">2 weeks</button>
+                <button onClick={() => applyPreset(3)} className="focus-ring px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--ink-soft)] hover:bg-[var(--paper)]">3 weeks</button>
+                <button onClick={() => applyPreset(4)} className="focus-ring px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--ink-soft)] hover:bg-[var(--paper)]">4 weeks</button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-[var(--muted)]">From</label>
+                  <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)} className={inputClass} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-[var(--muted)]">To</label>
+                  <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className={inputClass} />
+                </div>
+              </div>
+              <p className="text-xs text-[var(--muted)]">
+                Covers any week overlapping this range — works whether this client's weeks run Mon–Sun or something
+                else. <strong className="text-[var(--ink-soft)]">{timesheetIds.length} timesheet{timesheetIds.length !== 1 ? 's' : ''}</strong> matched.
+              </p>
               <div className="flex gap-2">
                 <input value={email} onChange={e => setEmail(e.target.value)} placeholder="hiringmanager@client.com" className={inputClass} />
-                <Button onClick={send} disabled={submitting || !email.trim()}>
+                <Button onClick={send} disabled={submitting || !email.trim() || timesheetIds.length === 0}>
                   {submitting ? 'Sending…' : '↗ Send for approval'}
                 </Button>
               </div>
