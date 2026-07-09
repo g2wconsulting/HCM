@@ -1,5 +1,5 @@
 import type { Employee, Timesheet, PayrollLineItem, Company, PayrollRun } from './types';
-import { computeFederalWithholding, computeStateWithholding, computeFica } from './taxEngine';
+import { computeFederalWithholding, computeStateWithholding, computeFica, computeEmployerFica, computeFutaSuta, computeWorkersComp } from './taxEngine';
 
 function rateForProject(employee: Employee, projectId: string | null): number {
   if (projectId) {
@@ -109,6 +109,16 @@ export function computePayrollLineItem(params: {
   const totalTaxes = federalWithholding + stateWithholding + socialSecurity + medicare + additionalMedicare;
   const netPay = grossPay - totalTaxes;
 
+  const employerFica = computeEmployerFica({ grossPayPerPeriod: grossPay, ytdGrossBeforeThisPeriod });
+  const { futa, suta } = computeFutaSuta({
+    grossPayPerPeriod: grossPay,
+    ytdGrossBeforeThisPeriod,
+    futaRate: company.futaRate, futaWageBase: company.futaWageBase,
+    sutaRate: company.sutaRate, sutaWageBase: company.sutaWageBase,
+  });
+  const workersComp = computeWorkersComp(grossPay, company.workersCompRate);
+  const employerLiabilityTotal = employerFica.socialSecurity + employerFica.medicare + futa + suta + workersComp;
+
   return {
     employeeId: employee.id,
     timesheetIds: timesheets.map(t => t.id),
@@ -127,6 +137,39 @@ export function computePayrollLineItem(params: {
     breakdownByProject: Array.from(breakdownMap.entries()).map(([projectId, v]) => ({
       projectId, hours: round2(v.hours), amount: round2(v.amount),
     })),
+    employerLiability: {
+      socialSecurity: round2(employerFica.socialSecurity),
+      medicare: round2(employerFica.medicare),
+      futa: round2(futa),
+      suta: round2(suta),
+      workersComp: round2(workersComp),
+      total: round2(employerLiabilityTotal),
+    },
+  };
+}
+
+/** Sums an employee's finalized-run totals for a given calendar year — used for W-2 generation. */
+export function computeW2Totals(employeeId: string, year: number, allRuns: PayrollRun[]) {
+  const totals = { wages: 0, federalWithholding: 0, stateWithholding: 0, socialSecurityTax: 0, medicareTax: 0 };
+  for (const run of allRuns) {
+    if (run.status !== 'finalized') continue;
+    if (new Date(run.payDate + 'T00:00:00').getFullYear() !== year) continue;
+    const line = run.lineItems.find(l => l.employeeId === employeeId);
+    if (!line) continue;
+    totals.wages += line.grossPay;
+    totals.federalWithholding += line.federalWithholding;
+    totals.stateWithholding += line.stateWithholding;
+    totals.socialSecurityTax += line.socialSecurity;
+    totals.medicareTax += line.medicare + line.additionalMedicare;
+  }
+  return {
+    wages: round2(totals.wages),
+    federalWithholding: round2(totals.federalWithholding),
+    stateWithholding: round2(totals.stateWithholding),
+    socialSecurityWages: round2(totals.wages),
+    socialSecurityTax: round2(totals.socialSecurityTax),
+    medicareWages: round2(totals.wages),
+    medicareTax: round2(totals.medicareTax),
   };
 }
 

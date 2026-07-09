@@ -20,6 +20,14 @@ export interface Company {
   payFrequency: 'biweekly';
   overtimeMultiplier: number; // e.g. 1.5
   overtimeThresholdWeekly: number; // hours per week before OT, e.g. 40
+  futaRate: number; // federal unemployment, e.g. 0.006
+  futaWageBase: number; // annual wage base per employee, e.g. 7000
+  sutaRate: number; // state unemployment — varies by state & experience rating
+  sutaWageBase: number; // annual wage base per employee — varies by state
+  workersCompRate: number; // per $100 of gross pay — varies by job classification
+  stateWithholdingAccountNumber?: string;
+  stateUnemploymentAccountNumber?: string;
+  workersCompPolicyNumber?: string;
   createdAt: string;
 }
 
@@ -147,6 +155,15 @@ export interface ActiveClockSession {
   startedAt: string;
 }
 
+export interface EmployerLiability {
+  socialSecurity: number; // employer FICA match
+  medicare: number; // employer FICA match
+  futa: number;
+  suta: number;
+  workersComp: number;
+  total: number;
+}
+
 export interface PayrollLineItem {
   employeeId: string;
   timesheetIds: string[];
@@ -163,6 +180,20 @@ export interface PayrollLineItem {
   totalTaxes: number;
   netPay: number;
   breakdownByProject: { projectId: string | null; hours: number; amount: number }[];
+  // Optional because payroll runs finalized before this feature was added
+  // don't have it stored.
+  employerLiability?: EmployerLiability;
+}
+
+export interface EmployeeTaxInfo {
+  employeeId: string;
+  ssn?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  updatedAt?: string;
 }
 
 export type PayrollRunStatus = 'draft' | 'finalized';

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
@@ -8,7 +8,9 @@ import { SignaturePad, SignaturePreview } from '../components/SignaturePad';
 import { StandardOrCustomForm } from '../components/StandardOrCustomForm';
 import { uid } from '../lib/db';
 import { supabase } from '../lib/supabaseClient';
-import type { EmployeeRate, FilingStatus, OnboardingDocStatus, USState } from '../lib/types';
+import { buildW2Pdf } from '../lib/pdfExport';
+import { computeW2Totals } from '../lib/payroll';
+import type { EmployeeRate, EmployeeTaxInfo, FilingStatus, OnboardingDocStatus, USState } from '../lib/types';
 
 const US_STATES: USState[] = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 
@@ -242,10 +244,124 @@ export function EmployeeDetail() {
         )}
       </Card>
 
+      <TaxProfileCard employeeId={employee.id} />
       <AccommodationCard employeeId={employee.id} />
       <FormsCard employeeId={employee.id} />
       <NotesCard employeeId={employee.id} />
     </div>
+  );
+}
+
+function TaxProfileCard({ employeeId }: { employeeId: string }) {
+  const { data, getEmployeeTaxInfo, setEmployeeTaxInfo } = useApp();
+  const [info, setInfo] = useState<EmployeeTaxInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [ssn, setSsn] = useState('');
+  const [revealSsn, setRevealSsn] = useState(false);
+  const [addr1, setAddr1] = useState('');
+  const [addr2, setAddr2] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zip, setZip] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [w2Year, setW2Year] = useState(new Date().getFullYear());
+  const [w2Status, setW2Status] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getEmployeeTaxInfo(employeeId).then(ti => {
+      if (cancelled) return;
+      setInfo(ti);
+      setSsn(ti?.ssn ?? '');
+      setAddr1(ti?.addressLine1 ?? '');
+      setAddr2(ti?.addressLine2 ?? '');
+      setCity(ti?.city ?? '');
+      setState(ti?.state ?? '');
+      setZip(ti?.zip ?? '');
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [employeeId, getEmployeeTaxInfo]);
+
+  async function save() {
+    const ok = await setEmployeeTaxInfo(employeeId, { ssn, addressLine1: addr1, addressLine2: addr2, city, state, zip });
+    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 1800); }
+  }
+
+  const employee = data.employees.find(e => e.id === employeeId);
+  const company = data.companies.find(c => c.id === employee?.companyId);
+
+  async function downloadW2() {
+    if (!employee || !company) return;
+    setW2Status(null);
+    const totals = computeW2Totals(employeeId, w2Year, data.payrollRuns);
+    if (totals.wages === 0) { setW2Status(`No finalized pay found for ${w2Year}.`); return; }
+    const doc = buildW2Pdf({
+      year: w2Year,
+      employeeName: `${employee.firstName} ${employee.lastName}`,
+      ssn: info?.ssn,
+      employeeAddress: { line1: info?.addressLine1, line2: info?.addressLine2, city: info?.city, state: info?.state, zip: info?.zip },
+      companyName: company.name,
+      ein: company.ein,
+      companyAddress: company.address,
+      stateWithholdingAccountNumber: company.stateWithholdingAccountNumber,
+      stateUnemploymentAccountNumber: company.stateUnemploymentAccountNumber,
+      ...totals,
+    });
+    doc.save(`w2-${employee.lastName}-${w2Year}.pdf`);
+  }
+
+  return (
+    <Card className="space-y-4">
+      <SectionLabel>Tax profile</SectionLabel>
+      <p className="text-sm text-[var(--ink-soft)]">
+        SSN and home address, used only for W-2 generation. Kept separate from the employee record and only
+        readable by admins and the employee themselves.
+      </p>
+      {loading ? <p className="text-sm text-[var(--muted)]">Loading…</p> : (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Social Security number">
+              <div className="flex items-center gap-2">
+                <input
+                  type={revealSsn ? 'text' : 'password'}
+                  value={ssn}
+                  onChange={e => setSsn(e.target.value)}
+                  className={inputClass}
+                  placeholder="XXX-XX-XXXX"
+                />
+                <button type="button" onClick={() => setRevealSsn(v => !v)} className="focus-ring text-xs text-[var(--accent)] hover:underline shrink-0">
+                  {revealSsn ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </Field>
+            <Field label="Zip"><input value={zip} onChange={e => setZip(e.target.value)} className={inputClass} /></Field>
+            <Field label="Address line 1"><input value={addr1} onChange={e => setAddr1(e.target.value)} className={inputClass} /></Field>
+            <Field label="Address line 2"><input value={addr2} onChange={e => setAddr2(e.target.value)} className={inputClass} /></Field>
+            <Field label="City"><input value={city} onChange={e => setCity(e.target.value)} className={inputClass} /></Field>
+            <Field label="State">
+              <select value={state} onChange={e => setState(e.target.value)} className={inputClass}>
+                <option value="">—</option>
+                {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button size="sm" onClick={save}>Save tax profile</Button>
+            {saved && <span className="text-sm text-[var(--good)]">Saved.</span>}
+          </div>
+
+          <div className="border-t border-[var(--border-soft)] pt-4 flex items-center gap-2">
+            <input
+              type="number" value={w2Year} onChange={e => setW2Year(parseInt(e.target.value, 10) || w2Year)}
+              className="focus-ring w-24 rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+            />
+            <Button size="sm" variant="secondary" onClick={downloadW2}>Download W-2 PDF</Button>
+          </div>
+          {w2Status && <p className="text-xs text-[var(--muted)]">{w2Status}</p>}
+        </>
+      )}
+    </Card>
   );
 }
 

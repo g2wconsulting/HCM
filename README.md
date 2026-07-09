@@ -24,6 +24,7 @@ In the Supabase SQL editor, run each of these once, in order:
 4. `supabase/migration_004_signature_requests.sql`
 5. `supabase/migration_005_project_budget.sql`
 6. `supabase/migration_006_standard_forms.sql`
+7. `supabase/migration_007_employer_liability_and_w2.sql`
 
 (All files are safe to re-run if you're ever unsure whether one applied — every `create policy` and constraint is guarded so re-running won't error.)
 
@@ -347,8 +348,13 @@ land in inboxes (not spam) and come from your own domain.
   split approval yet. Worth building if that scenario comes up often.
 - **No candidate/ATS pipeline.** "Candidates" are just employees with
   status `onboarding` — there's no separate pre-hire tracking stage.
-- **Employer-side taxes, local/city taxes, and benefit deductions** are
-  still not modeled (see the tax section below).
+- **Local/city taxes and benefit deductions** are still not modeled.
+  Employer-side liability (FICA match, FUTA, SUTA, workers' comp) is now
+  computed per payroll run (see the tax section below) but SUTA rate/wage
+  base and workers' comp rate default to 0 until an admin configures them
+  in Settings — every state sets its own SUTA rate and wage base, and
+  workers' comp rates depend on job classification, so there's no safe
+  universal default the way there is for federal FUTA.
 - **No self-serve signup or password reset UI yet** — Supabase Auth
   supports both; only the screens haven't been built.
 
@@ -361,6 +367,20 @@ change most years — review and update that one file each January against
 current IRS Publication 15-T and your state's Department of Revenue
 tables before running real payroll. This is a simplified model, not a
 substitute for a CPA or payroll compliance service.
+
+**Employer liability** (employer FICA match, FUTA, SUTA, workers' comp) is
+computed alongside employee withholding on every payroll run — see
+`computeEmployerFica`/`computeFutaSuta`/`computeWorkersComp` in
+`taxEngine.ts`. Rates, wage bases, and the account/policy numbers they're
+filed under are configured per-company in Settings.
+
+**W-2s** (downloadable from an employee's "My pay" page, or by an admin
+from an employee's profile) are a wage-and-tax summary generated with
+jsPDF — they are **not** a laser-printed, SSA-approved substitute Form
+W-2 (IRS Publication 1141 governs the exact box layout/paper stock
+required for that). Treat generated W-2 PDFs as an internal reference for
+employees, not as the document you file with the SSA — for actual filing,
+run these totals through a certified W-2 vendor or payroll tax service.
 
 ## Project structure
 

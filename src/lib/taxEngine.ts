@@ -128,6 +128,41 @@ export function computeFica(params: {
   return { socialSecurity, medicare, additionalMedicare };
 }
 
+export function computeEmployerFica(params: {
+  grossPayPerPeriod: number;
+  ytdGrossBeforeThisPeriod: number;
+}): { socialSecurity: number; medicare: number } {
+  const { grossPayPerPeriod, ytdGrossBeforeThisPeriod } = params;
+  const ssRemainingRoom = Math.max(0, FICA.socialSecurityWageBase - ytdGrossBeforeThisPeriod);
+  const ssTaxableThisPeriod = Math.min(grossPayPerPeriod, ssRemainingRoom);
+  return {
+    socialSecurity: ssTaxableThisPeriod * FICA.socialSecurityRate,
+    medicare: grossPayPerPeriod * FICA.medicareRate, // employer matches base Medicare only, never the 0.9% additional Medicare surtax
+  };
+}
+
+export function computeFutaSuta(params: {
+  grossPayPerPeriod: number;
+  ytdGrossBeforeThisPeriod: number;
+  futaRate: number;
+  futaWageBase: number;
+  sutaRate: number;
+  sutaWageBase: number;
+}): { futa: number; suta: number } {
+  const { grossPayPerPeriod, ytdGrossBeforeThisPeriod, futaRate, futaWageBase, sutaRate, sutaWageBase } = params;
+  const futaRoom = Math.max(0, futaWageBase - ytdGrossBeforeThisPeriod);
+  const futa = Math.min(grossPayPerPeriod, futaRoom) * futaRate;
+
+  const sutaRoom = Math.max(0, sutaWageBase - ytdGrossBeforeThisPeriod);
+  const suta = Math.min(grossPayPerPeriod, sutaRoom) * sutaRate;
+
+  return { futa, suta };
+}
+
+export function computeWorkersComp(grossPayPerPeriod: number, ratePer100: number): number {
+  return (grossPayPerPeriod / 100) * ratePer100;
+}
+
 // ---------------------------------------------------------------------------
 // State income tax — 2024, simplified single-taxpayer bracket tables.
 // Every state is included. Progressive-tax states use bracket tables; flat

@@ -1,6 +1,6 @@
 import type {
   Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission, SignatureRequest, ProfileSummary,
+  FormTemplate, FormSubmission, SignatureRequest, ProfileSummary, EmployeeTaxInfo,
 } from './types';
 
 export function rowToClient(r: any): Client {
@@ -59,7 +59,14 @@ export function rowToCompany(r: any): Company {
   return {
     id: r.id, name: r.name, ein: r.ein ?? undefined, address: r.address ?? undefined,
     state: r.state, payFrequency: 'biweekly', overtimeMultiplier: Number(r.overtime_multiplier),
-    overtimeThresholdWeekly: Number(r.overtime_threshold_weekly), createdAt: r.created_at,
+    overtimeThresholdWeekly: Number(r.overtime_threshold_weekly),
+    futaRate: Number(r.futa_rate ?? 0.006), futaWageBase: Number(r.futa_wage_base ?? 7000),
+    sutaRate: Number(r.suta_rate ?? 0), sutaWageBase: Number(r.suta_wage_base ?? 7000),
+    workersCompRate: Number(r.workers_comp_rate ?? 0),
+    stateWithholdingAccountNumber: r.state_withholding_account_number ?? undefined,
+    stateUnemploymentAccountNumber: r.state_unemployment_account_number ?? undefined,
+    workersCompPolicyNumber: r.workers_comp_policy_number ?? undefined,
+    createdAt: r.created_at,
   };
 }
 export function companyToRow(patch: Partial<Company>): any {
@@ -70,6 +77,33 @@ export function companyToRow(patch: Partial<Company>): any {
   if (patch.state !== undefined) row.state = patch.state;
   if (patch.overtimeMultiplier !== undefined) row.overtime_multiplier = patch.overtimeMultiplier;
   if (patch.overtimeThresholdWeekly !== undefined) row.overtime_threshold_weekly = patch.overtimeThresholdWeekly;
+  if (patch.futaRate !== undefined) row.futa_rate = patch.futaRate;
+  if (patch.futaWageBase !== undefined) row.futa_wage_base = patch.futaWageBase;
+  if (patch.sutaRate !== undefined) row.suta_rate = patch.sutaRate;
+  if (patch.sutaWageBase !== undefined) row.suta_wage_base = patch.sutaWageBase;
+  if (patch.workersCompRate !== undefined) row.workers_comp_rate = patch.workersCompRate;
+  if (patch.stateWithholdingAccountNumber !== undefined) row.state_withholding_account_number = patch.stateWithholdingAccountNumber;
+  if (patch.stateUnemploymentAccountNumber !== undefined) row.state_unemployment_account_number = patch.stateUnemploymentAccountNumber;
+  if (patch.workersCompPolicyNumber !== undefined) row.workers_comp_policy_number = patch.workersCompPolicyNumber;
+  return row;
+}
+
+export function rowToEmployeeTaxInfo(r: any): EmployeeTaxInfo {
+  return {
+    employeeId: r.employee_id, ssn: r.ssn ?? undefined,
+    addressLine1: r.address_line1 ?? undefined, addressLine2: r.address_line2 ?? undefined,
+    city: r.city ?? undefined, state: r.state ?? undefined, zip: r.zip ?? undefined,
+    updatedAt: r.updated_at,
+  };
+}
+export function employeeTaxInfoToRow(t: Partial<EmployeeTaxInfo> & { employeeId: string; companyId: string }): any {
+  const row: any = { employee_id: t.employeeId, company_id: t.companyId };
+  if (t.ssn !== undefined) row.ssn = t.ssn;
+  if (t.addressLine1 !== undefined) row.address_line1 = t.addressLine1;
+  if (t.addressLine2 !== undefined) row.address_line2 = t.addressLine2;
+  if (t.city !== undefined) row.city = t.city;
+  if (t.state !== undefined) row.state = t.state;
+  if (t.zip !== undefined) row.zip = t.zip;
   return row;
 }
 

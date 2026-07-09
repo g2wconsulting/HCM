@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
 import type {
   AppData, Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission, SignatureRequest,
+  FormTemplate, FormSubmission, SignatureRequest, EmployeeTaxInfo,
 } from './types';
 import {
   rowToCompany, companyToRow, rowToEmployee, employeeToRow, rowToProject, projectToRow,
@@ -11,6 +11,7 @@ import {
   rowToClient, clientToRow, rowToNote, noteToRow, rowToAccommodation, accommodationToRow,
   rowToFormTemplate, formTemplateToRow, rowToFormSubmission, formSubmissionToRow,
   rowToSignatureRequest, signatureRequestToRow, rowToProfileSummary,
+  rowToEmployeeTaxInfo, employeeTaxInfoToRow,
 } from './mappers';
 
 interface AppContextValue {
@@ -43,6 +44,10 @@ interface AppContextValue {
   inviteUser: (params: { type: 'employee' | 'client'; targetId: string; email: string }) => Promise<{ success: boolean; error?: string }>;
   addPayrollRun: (r: Omit<PayrollRun, 'id' | 'createdAt'>) => Promise<PayrollRun | null>;
   updatePayrollRun: (id: string, patch: Partial<PayrollRun>) => Promise<void>;
+  // Deliberately not part of `data` — SSN/address are fetched one employee at
+  // a time on demand, never bulk-loaded into every session's memory.
+  getEmployeeTaxInfo: (employeeId: string) => Promise<EmployeeTaxInfo | null>;
+  setEmployeeTaxInfo: (employeeId: string, patch: Partial<EmployeeTaxInfo>) => Promise<boolean>;
 }
 
 const emptyData: AppData = {
@@ -374,6 +379,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setData(prev => ({ ...prev, payrollRuns: prev.payrollRuns.map(r => r.id === id ? { ...r, ...patch } : r) }));
       const { error } = await supabase.from('payroll_runs').update(payrollRunToRow(patch)).eq('id', id);
       if (error) { console.error(error); refresh(); }
+    },
+
+    getEmployeeTaxInfo: async (employeeId) => {
+      const { data: row, error } = await supabase.from('employee_tax_info').select('*').eq('employee_id', employeeId).maybeSingle();
+      if (error) { console.error(error); return null; }
+      return row ? rowToEmployeeTaxInfo(row) : null;
+    },
+    setEmployeeTaxInfo: async (employeeId, patch) => {
+      if (!profile) return false;
+      const row = { ...employeeTaxInfoToRow({ ...patch, employeeId, companyId: profile.companyId }), updated_at: new Date().toISOString() };
+      const { error } = await supabase.from('employee_tax_info').upsert(row, { onConflict: 'employee_id' });
+      if (error) { console.error(error); return false; }
+      return true;
     },
   }), [data, loading, loadError, profile, refresh]);
 

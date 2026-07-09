@@ -16,7 +16,8 @@ export function PayrollRunDetail() {
 
   const totals = run.lineItems.reduce((acc, l) => ({
     gross: acc.gross + l.grossPay, taxes: acc.taxes + l.totalTaxes, net: acc.net + l.netPay,
-  }), { gross: 0, taxes: 0, net: 0 });
+    employerLiability: acc.employerLiability + (l.employerLiability?.total ?? 0),
+  }), { gross: 0, taxes: 0, net: 0, employerLiability: 0 });
 
   function finalize() {
     updatePayrollRun(run!.id, { status: 'finalized', finalizedAt: new Date().toISOString() });
@@ -29,17 +30,22 @@ export function PayrollRunDetail() {
       ['Pay date', formatDate(run!.payDate)],
       ['Status', run!.status],
       [],
-      ['Employee', 'Regular hrs', 'OT hrs', 'Gross', 'Federal WH', 'State WH', 'Social Security', 'Medicare', "Add'l Medicare", 'Total taxes', 'Net pay'],
+      [
+        'Employee', 'Regular hrs', 'OT hrs', 'Gross', 'Federal WH', 'State WH', 'Social Security', 'Medicare', "Add'l Medicare", 'Total taxes', 'Net pay',
+        'Employer SS match', 'Employer Medicare match', 'FUTA', 'SUTA', "Workers' comp", 'Total employer liability',
+      ],
     ];
     run!.lineItems.forEach(l => {
       const emp = data.employees.find(e => e.id === l.employeeId);
+      const el = l.employerLiability;
       rows.push([
         `${emp?.firstName} ${emp?.lastName}`, l.regularHours, l.overtimeHours, l.grossPay,
         l.federalWithholding, l.stateWithholding, l.socialSecurity, l.medicare, l.additionalMedicare, l.totalTaxes, l.netPay,
+        el?.socialSecurity ?? 0, el?.medicare ?? 0, el?.futa ?? 0, el?.suta ?? 0, el?.workersComp ?? 0, el?.total ?? 0,
       ]);
     });
     rows.push([]);
-    rows.push(['Totals', '', '', totals.gross, '', '', '', '', '', totals.taxes, totals.net]);
+    rows.push(['Totals', '', '', totals.gross, '', '', '', '', '', totals.taxes, totals.net, '', '', '', '', '', totals.employerLiability]);
     downloadCsv(`payroll-${run!.periodStart}-to-${run!.periodEnd}.csv`, rows);
   }
 
@@ -59,10 +65,11 @@ export function PayrollRunDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <Card><SectionLabel>Total gross</SectionLabel><div className="font-display text-2xl tabular">{money(totals.gross)}</div></Card>
         <Card><SectionLabel>Total taxes withheld</SectionLabel><div className="font-display text-2xl tabular text-[var(--pending)]">{money(totals.taxes)}</div></Card>
         <Card><SectionLabel>Total net pay</SectionLabel><div className="font-display text-2xl tabular text-[var(--good)]">{money(totals.net)}</div></Card>
+        <Card><SectionLabel>Employer liability</SectionLabel><div className="font-display text-2xl tabular">{money(totals.employerLiability)}</div><div className="text-xs text-[var(--muted)] mt-1">employer's cost, not withheld from pay</div></Card>
       </div>
 
       <Card className="!p-0 overflow-hidden">
@@ -147,6 +154,19 @@ function PayStub({ lineItem, employeeName, periodLabel, projects }: { lineItem: 
             const proj = projects.find(p => p.id === b.projectId);
             return <Row key={String(b.projectId)} label={proj?.name ?? 'Unassigned'} value={`${fmtHours(b.hours)} hrs`} />;
           })}
+        </div>
+      )}
+      {l.employerLiability && (
+        <div className="mt-4 pt-3 border-t border-dashed border-[var(--border)]">
+          <div className="text-xs text-[var(--muted)] mb-1">Employer liability (not withheld from employee's pay)</div>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+            <Row label="Employer Social Security" value={money(l.employerLiability.socialSecurity)} />
+            <Row label="Employer Medicare" value={money(l.employerLiability.medicare)} />
+            <Row label="FUTA" value={money(l.employerLiability.futa)} />
+            <Row label="SUTA" value={money(l.employerLiability.suta)} />
+            <Row label="Workers' comp" value={money(l.employerLiability.workersComp)} />
+            <Row label="Total employer liability" value={money(l.employerLiability.total)} bold />
+          </div>
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { Company, Employee, Project, SignatureRecord, Timesheet } from './types';
-import { formatDate } from './format';
+import type { Company, Employee, Project, PayrollLineItem, SignatureRecord, Timesheet } from './types';
+import { formatDate, money } from './format';
 
 // jsPDF only ships core fonts (helvetica/times/courier) — it can't load the
 // web fonts SignaturePad's typed mode uses (Fraunces, IBM Plex Mono,
@@ -181,6 +181,165 @@ export function buildTimesheetRangePdf(params: {
 
 export function pdfFileName(employee: Employee, rangeStart: string, rangeEnd: string): string {
   return `timesheets-${employee.lastName}-${rangeStart}-to-${rangeEnd}.pdf`;
+}
+
+function textRow(doc: jsPDF, x: number, y: number, w: number, label: string, value: string, bold = false) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal');
+  doc.text(label, x, y);
+  doc.text(value, x + w, y, { align: 'right' });
+}
+
+export function buildPayStubPdf(params: {
+  companyName: string;
+  employeeName: string;
+  periodLabel: string;
+  payDate: string;
+  lineItem: PayrollLineItem;
+  projects: Project[];
+}): jsPDF {
+  const { companyName, employeeName, periodLabel, payDate, lineItem: l, projects } = params;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const marginX = 48;
+  const colW = 300;
+  let y = 56;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text(companyName || 'Pay Stub', marginX, y);
+  doc.setFontSize(10);
+  doc.text('PAY STUB', marginX + colW * 2 - 60, y);
+  y += 22;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(60);
+  doc.text(employeeName, marginX, y);
+  y += 15;
+  doc.setFontSize(9);
+  doc.setTextColor(110);
+  doc.text(`${periodLabel} · Pay date ${formatDate(payDate)}`, marginX, y);
+  doc.setTextColor(20);
+  y += 26;
+
+  doc.setFontSize(10);
+  textRow(doc, marginX, y, colW, 'Regular pay', money(l.grossRegularPay)); y += 16;
+  textRow(doc, marginX, y, colW, 'Overtime pay', money(l.grossOvertimePay)); y += 16;
+  textRow(doc, marginX, y, colW, 'Gross pay', money(l.grossPay), true); y += 20;
+
+  doc.setDrawColor(210);
+  doc.line(marginX, y - 10, marginX + colW, y - 10);
+
+  textRow(doc, marginX, y, colW, 'Federal withholding', `-${money(l.federalWithholding)}`); y += 16;
+  textRow(doc, marginX, y, colW, 'State withholding', `-${money(l.stateWithholding)}`); y += 16;
+  textRow(doc, marginX, y, colW, 'Social Security', `-${money(l.socialSecurity)}`); y += 16;
+  textRow(doc, marginX, y, colW, 'Medicare', `-${money(l.medicare)}`); y += 16;
+  if (l.additionalMedicare > 0) { textRow(doc, marginX, y, colW, 'Additional Medicare', `-${money(l.additionalMedicare)}`); y += 16; }
+  textRow(doc, marginX, y, colW, 'Total taxes', `-${money(l.totalTaxes)}`, true); y += 22;
+
+  doc.line(marginX, y - 12, marginX + colW, y - 12);
+  doc.setFontSize(13);
+  textRow(doc, marginX, y, colW, 'Net pay', money(l.netPay), true);
+  y += 30;
+
+  if (l.breakdownByProject.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(110);
+    doc.text('HOURS BY PROJECT', marginX, y);
+    doc.setTextColor(20);
+    y += 14;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    for (const b of l.breakdownByProject) {
+      const proj = projects.find(p => p.id === b.projectId);
+      textRow(doc, marginX, y, colW, proj?.name ?? 'Unassigned', `${b.hours.toFixed(2)} hrs`);
+      y += 14;
+    }
+  }
+
+  return doc;
+}
+
+export interface W2Data {
+  year: number;
+  employeeName: string;
+  ssn?: string;
+  employeeAddress: { line1?: string; line2?: string; city?: string; state?: string; zip?: string };
+  companyName: string;
+  ein?: string;
+  companyAddress?: string;
+  stateWithholdingAccountNumber?: string;
+  stateUnemploymentAccountNumber?: string;
+  wages: number;
+  federalWithholding: number;
+  stateWithholding: number;
+  socialSecurityWages: number;
+  socialSecurityTax: number;
+  medicareWages: number;
+  medicareTax: number;
+}
+
+export function buildW2Pdf(w: W2Data): jsPDF {
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const marginX = 48;
+  let y = 56;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text(`${w.year} Wage and Tax Statement`, marginX, y);
+  y += 18;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text('Informational summary — not a laser-printed, SSA-approved substitute Form W-2. For official filing,', marginX, y);
+  y += 12;
+  doc.text('run these totals through a certified W-2 vendor or payroll tax service.', marginX, y);
+  doc.setTextColor(20);
+  y += 28;
+
+  const employeeAddr = [w.employeeAddress.line1, w.employeeAddress.line2, [w.employeeAddress.city, w.employeeAddress.state, w.employeeAddress.zip].filter(Boolean).join(', ')]
+    .filter(Boolean).join('\n');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Employer', marginX, y);
+  doc.text('Employee', marginX + 300, y);
+  y += 14;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text([w.companyName, w.companyAddress ?? '', w.ein ? `EIN: ${w.ein}` : ''].filter(Boolean), marginX, y);
+  doc.text([w.employeeName, employeeAddr, w.ssn ? `SSN: ${w.ssn}` : ''].filter(Boolean), marginX + 300, y);
+  y += 60;
+
+  if (w.stateWithholdingAccountNumber || w.stateUnemploymentAccountNumber) {
+    doc.setFontSize(9);
+    doc.setTextColor(110);
+    if (w.stateWithholdingAccountNumber) { doc.text(`State withholding account #: ${w.stateWithholdingAccountNumber}`, marginX, y); y += 12; }
+    if (w.stateUnemploymentAccountNumber) { doc.text(`State unemployment account #: ${w.stateUnemploymentAccountNumber}`, marginX, y); y += 12; }
+    doc.setTextColor(20);
+    y += 10;
+  }
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: marginX, right: marginX },
+    head: [['Box', 'Description', 'Amount']],
+    body: [
+      ['1', 'Wages, tips, other compensation', money(w.wages)],
+      ['2', 'Federal income tax withheld', money(w.federalWithholding)],
+      ['3', 'Social Security wages', money(w.socialSecurityWages)],
+      ['4', 'Social Security tax withheld', money(w.socialSecurityTax)],
+      ['5', 'Medicare wages and tips', money(w.medicareWages)],
+      ['6', 'Medicare tax withheld', money(w.medicareTax)],
+      ['16', 'State wages, tips, etc.', money(w.wages)],
+      ['17', 'State income tax withheld', money(w.stateWithholding)],
+    ],
+    styles: { fontSize: 9, cellPadding: 6 },
+    headStyles: { fillColor: [33, 29, 24], textColor: 255 },
+    columnStyles: { 0: { cellWidth: 40 }, 2: { halign: 'right', cellWidth: 90 } },
+  });
+
+  return doc;
 }
 
 export async function shareOrDownloadPdf(doc: jsPDF, filename: string, shareText: string): Promise<'shared' | 'downloaded'> {
