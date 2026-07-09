@@ -76,7 +76,7 @@ export function PortalTimesheetDetail() {
         )}
       </Card>
 
-      {showSign && <SignaturePad defaultName="" onSign={approve} onCancel={() => setShowSign(false)} />}
+      {showSign && <SignaturePad defaultName="" requireTitle onSign={approve} onCancel={() => setShowSign(false)} />}
 
       {!ts.clientApprovedAt && !showSign && (
         <Button onClick={() => setShowSign(true)}>Approve &amp; sign</Button>

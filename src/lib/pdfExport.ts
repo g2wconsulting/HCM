@@ -1,7 +1,59 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import type { Company, Employee, Project, Timesheet } from './types';
+import type { Company, Employee, Project, SignatureRecord, Timesheet } from './types';
 import { formatDate } from './format';
+
+// jsPDF only ships core fonts (helvetica/times/courier) — it can't load the
+// web fonts SignaturePad's typed mode uses (Fraunces, IBM Plex Mono,
+// cursive), so we approximate: monospace-flavored fonts render as courier,
+// everything else (serif/cursive) renders as an italic serif.
+function typedSignatureFont(typedFont?: string): [string, string] {
+  return typedFont?.toLowerCase().includes('mono') ? ['courier', 'normal'] : ['times', 'italic'];
+}
+
+/** Draws one signer's block (label, rendered signature, name/title/date) inside a column of width `w` starting at (x, y). Returns the block's height. */
+function drawSignatureBlock(doc: jsPDF, x: number, y: number, w: number, label: string, sig?: SignatureRecord): number {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text(label.toUpperCase(), x, y);
+  doc.setTextColor(20);
+
+  if (!sig) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(150);
+    doc.text('Not yet signed', x, y + 14);
+    doc.setTextColor(20);
+    return 24;
+  }
+
+  let cursorY = y + 8;
+  if (sig.method === 'typed') {
+    const [font, style] = typedSignatureFont(sig.typedFont);
+    doc.setFont(font, style);
+    doc.setFontSize(16);
+    doc.text(sig.name, x, cursorY + 10);
+    cursorY += 16;
+  } else if (sig.dataUrl) {
+    const maxW = Math.min(w, 130);
+    const maxH = 32;
+    const props = doc.getImageProperties(sig.dataUrl);
+    const ratio = Math.min(maxW / props.width, maxH / props.height);
+    const iw = props.width * ratio;
+    const ih = props.height * ratio;
+    doc.addImage(sig.dataUrl, props.fileType, x, cursorY, iw, ih);
+    cursorY += ih + 4;
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(110);
+  const meta = [sig.name, sig.title, `Signed ${new Date(sig.signedAt).toLocaleDateString()}`].filter(Boolean).join(' · ');
+  doc.text(meta, x, cursorY + 6);
+  doc.setTextColor(20);
+  return cursorY + 6 - y + 6;
+}
 
 export function buildTimesheetRangePdf(params: {
   company: Company;
@@ -73,15 +125,22 @@ export function buildTimesheetRangePdf(params: {
     });
 
     // @ts-expect-error - jspdf-autotable attaches this to the doc instance
-    y = doc.lastAutoTable.finalY + 24;
+    y = doc.lastAutoTable.finalY + 18;
 
-    const empSig = ts.employeeSignature ? `Signed by ${ts.employeeSignature.name} on ${new Date(ts.employeeSignature.signedAt).toLocaleDateString()}` : 'Not yet signed';
-    const apprSig = ts.approverSignature ? `Approved by ${ts.approverSignature.name} on ${new Date(ts.approverSignature.signedAt).toLocaleDateString()}` : 'Not yet approved';
-    doc.setFontSize(8);
-    doc.setTextColor(120);
-    doc.text(`Employee: ${empSig}    |    Manager: ${apprSig}`, marginX, y);
-    doc.setTextColor(20);
-    y += idx < timesheets.length - 1 ? 20 : 8;
+    if (y > 620) { doc.addPage(); y = 56; }
+
+    const colGap = 20;
+    const colW = (doc.internal.pageSize.getWidth() - marginX * 2 - colGap) / 2;
+    const empHeight = drawSignatureBlock(doc, marginX, y, colW, 'Employee', ts.employeeSignature);
+    const apprHeight = drawSignatureBlock(doc, marginX + colW + colGap, y, colW, 'Approver', ts.approverSignature);
+    y += Math.max(empHeight, apprHeight);
+
+    if (ts.clientApproval) {
+      y += 6;
+      y += drawSignatureBlock(doc, marginX, y, colW * 2 + colGap, 'External / client approval', ts.clientApproval);
+    }
+
+    y += idx < timesheets.length - 1 ? 16 : 8;
   });
 
   if (y > 650) { doc.addPage(); y = 56; }
@@ -89,24 +148,33 @@ export function buildTimesheetRangePdf(params: {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text(`Total hours for period: ${grandTotal.toFixed(2)}`, marginX, y);
-  y += 40;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(90);
-  doc.text('This document may be signed below to confirm accuracy for the full period covered.', marginX, y);
   y += 30;
 
-  doc.line(marginX, y, marginX + 220, y);
-  doc.text('Employee signature', marginX, y + 12);
-  doc.line(marginX + 260, y, marginX + 420, y);
-  doc.text('Date', marginX + 260, y + 12);
-  y += 46;
+  const anyUnsigned = timesheets.some(ts => !ts.employeeSignature || !ts.approverSignature);
+  if (anyUnsigned) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(90);
+    doc.text('This document may be signed below to confirm accuracy for the full period covered.', marginX, y);
+    y += 30;
 
-  doc.line(marginX, y, marginX + 220, y);
-  doc.text('Approved by', marginX, y + 12);
-  doc.line(marginX + 260, y, marginX + 420, y);
-  doc.text('Date', marginX + 260, y + 12);
+    doc.line(marginX, y, marginX + 220, y);
+    doc.text('Employee signature', marginX, y + 12);
+    doc.line(marginX + 260, y, marginX + 420, y);
+    doc.text('Date', marginX + 260, y + 12);
+    y += 46;
+
+    doc.line(marginX, y, marginX + 220, y);
+    doc.text('Approved by', marginX, y + 12);
+    doc.line(marginX + 260, y, marginX + 420, y);
+    doc.text('Date', marginX + 260, y + 12);
+  } else {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(90);
+    doc.text('All timesheets in this period have been signed as shown above.', marginX, y);
+    doc.setTextColor(20);
+  }
 
   return doc;
 }

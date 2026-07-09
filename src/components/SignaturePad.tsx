@@ -7,9 +7,12 @@ const TYPED_FONTS = ["'Fraunces', serif", "'IBM Plex Mono', monospace", "cursive
 type Mode = 'typed' | 'drawn' | 'uploaded';
 
 export function SignaturePad({
-  defaultName, onSign, onCancel, allowedModes,
+  defaultName, defaultTitle, requireTitle, onSign, onCancel, allowedModes,
 }: {
   defaultName: string;
+  defaultTitle?: string;
+  /** Require the signer to also type their job title/role before signing. */
+  requireTitle?: boolean;
   onSign: (sig: SignatureRecord) => void;
   onCancel?: () => void;
   /** Which signing methods to offer. Defaults to typed + drawn (internal,
@@ -22,6 +25,7 @@ export function SignaturePad({
   const modes = allowedModes ?? ['typed', 'drawn'];
   const [mode, setMode] = useState<Mode>(modes[0]);
   const [name, setName] = useState(defaultName);
+  const [title, setTitle] = useState(defaultTitle ?? '');
   const [fontIdx, setFontIdx] = useState(0);
   const [uploadedDataUrl, setUploadedDataUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -87,17 +91,21 @@ export function SignaturePad({
   }
 
   function submit() {
+    if (requireTitle && !title.trim()) return;
+    const titleField = requireTitle ? { title: title.trim() } : {};
     if (mode === 'typed') {
       if (!name.trim()) return;
-      onSign({ name: name.trim(), method: 'typed', typedFont: TYPED_FONTS[fontIdx], signedAt: new Date().toISOString() });
+      onSign({ name: name.trim(), ...titleField, method: 'typed', typedFont: TYPED_FONTS[fontIdx], signedAt: new Date().toISOString() });
     } else if (mode === 'drawn') {
       if (!hasDrawn.current || !canvasRef.current) return;
-      onSign({ name: name.trim() || defaultName, method: 'drawn', dataUrl: canvasRef.current.toDataURL('image/png'), signedAt: new Date().toISOString() });
+      onSign({ name: name.trim() || defaultName, ...titleField, method: 'drawn', dataUrl: canvasRef.current.toDataURL('image/png'), signedAt: new Date().toISOString() });
     } else {
       if (!uploadedDataUrl) return;
-      onSign({ name: name.trim() || defaultName, method: 'uploaded', dataUrl: uploadedDataUrl, signedAt: new Date().toISOString() });
+      onSign({ name: name.trim() || defaultName, ...titleField, method: 'uploaded', dataUrl: uploadedDataUrl, signedAt: new Date().toISOString() });
     }
   }
+
+  const canSubmit = !requireTitle || title.trim().length > 0;
 
   const modeLabels: Record<Mode, string> = { typed: 'Type signature', drawn: 'Draw signature', uploaded: 'Upload signature' };
 
@@ -115,6 +123,15 @@ export function SignaturePad({
             </button>
           ))}
         </div>
+      )}
+
+      {requireTitle && (
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="Title / role (e.g. Project Manager)"
+          className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm mb-3"
+        />
       )}
 
       {mode === 'typed' && (
@@ -201,7 +218,7 @@ export function SignaturePad({
       </p>
 
       <div className="flex gap-2 mt-4">
-        <Button onClick={submit}>Sign &amp; confirm</Button>
+        <Button onClick={submit} disabled={!canSubmit}>Sign &amp; confirm</Button>
         {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
     </div>
@@ -216,7 +233,12 @@ export function SignaturePreview({ sig }: { sig: SignatureRecord }) {
       ) : (
         <img src={sig.dataUrl} alt={`Signature of ${sig.name}`} className="h-10 border-b border-[var(--border)]" />
       )}
-      <span className="text-xs text-[var(--muted)] tabular">signed {new Date(sig.signedAt).toLocaleDateString()}</span>
+      <div className="flex flex-col">
+        {sig.title && (
+          <span className="text-xs text-[var(--ink-soft)]">{sig.method !== 'typed' ? `${sig.name}, ` : ''}{sig.title}</span>
+        )}
+        <span className="text-xs text-[var(--muted)] tabular">signed {new Date(sig.signedAt).toLocaleDateString()}</span>
+      </div>
     </div>
   );
 }

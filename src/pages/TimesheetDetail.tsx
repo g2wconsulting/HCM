@@ -221,7 +221,13 @@ export function TimesheetDetail() {
           {ts.employeeSignature ? (
             <SignaturePreview sig={ts.employeeSignature} />
           ) : showSignEmployee ? (
-            <SignaturePad defaultName={`${employee.firstName} ${employee.lastName}`} onSign={handleEmployeeSign} onCancel={() => setShowSignEmployee(false)} />
+            <SignaturePad
+              defaultName={`${employee.firstName} ${employee.lastName}`}
+              defaultTitle={employee.title}
+              requireTitle
+              onSign={handleEmployeeSign}
+              onCancel={() => setShowSignEmployee(false)}
+            />
           ) : editable ? (
             <button
               onClick={() => weekTotal > 0 && setShowSignEmployee(true)}
@@ -240,7 +246,7 @@ export function TimesheetDetail() {
           {isAdmin ? (
             <div className="flex flex-col gap-2">
               {showSignApprover ? (
-                <SignaturePad defaultName="" onSign={handleApproverSign} onCancel={() => setShowSignApprover(false)} />
+                <SignaturePad defaultName="" requireTitle onSign={handleApproverSign} onCancel={() => setShowSignApprover(false)} />
               ) : showReject ? (
                 <div className="space-y-3">
                   <textarea value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} rows={3}

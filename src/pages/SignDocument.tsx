@@ -120,7 +120,7 @@ export function SignDocument() {
             </p>
           </Card>
         ) : showSign ? (
-          <SignaturePad defaultName="" onSign={handleSign} onCancel={() => setShowSign(false)} allowedModes={['drawn', 'uploaded']} />
+          <SignaturePad defaultName="" requireTitle onSign={handleSign} onCancel={() => setShowSign(false)} allowedModes={['drawn', 'uploaded']} />
         ) : (
           <Card>
             <SectionLabel>Confirm and sign</SectionLabel>

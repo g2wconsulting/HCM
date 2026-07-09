@@ -39,6 +39,7 @@ export interface OnboardingDocument {
 
 export interface SignatureRecord {
   name: string;
+  title?: string; // signer's job title/role, required for timesheet sign-off
   method: 'typed' | 'drawn' | 'uploaded';
   dataUrl?: string; // for drawn or uploaded signatures
   typedFont?: string;
