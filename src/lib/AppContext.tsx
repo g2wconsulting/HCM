@@ -77,9 +77,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabase.from('signature_requests').select('*'),
         supabase.from('payroll_runs').select('*'),
       ]);
-      const firstError = [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, runsRes]
-        .find(r => r.error)?.error;
-      if (firstError) throw firstError;
+
+      // Each resource is handled independently: a missing table (e.g. a
+      // migration that hasn't been run yet) only zeroes out that one
+      // piece of data and logs a warning — it should never blank the
+      // entire app just because one newer feature's table isn't there.
+      const warn = (label: string, err: any) => {
+        if (err) console.warn(`Could not load "${label}" — has its migration been run? `, err.message ?? err);
+      };
+      warn('companies', companiesRes.error);
+      warn('clients', clientsRes.error);
+      warn('employees', employeesRes.error);
+      warn('projects', projectsRes.error);
+      warn('timesheets', timesheetsRes.error);
+      warn('onboarding_documents', docsRes.error);
+      warn('notes', notesRes.error);
+      warn('accommodation_requests', accomRes.error);
+      warn('form_templates', templatesRes.error);
+      warn('form_submissions', submissionsRes.error);
+      warn('signature_requests', sigReqRes.error);
+      warn('payroll_runs', runsRes.error);
 
       setData({
         companies: (companiesRes.data ?? []).map(rowToCompany),
