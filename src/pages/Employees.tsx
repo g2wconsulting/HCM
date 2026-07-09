@@ -1,31 +1,75 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
-import { Badge, Button, Card } from '../components/ui';
+import { Badge, Button, Card, EmptyState, inputClass } from '../components/ui';
 import { initials, money } from '../lib/format';
 import type { Employee } from '../lib/types';
+
+function mondayIso(date: Date): string {
+  const d = new Date(date);
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
 
 export function Employees() {
   const { data, addEmployee } = useApp();
   const [showNew, setShowNew] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const thisWeekStart = mondayIso(new Date());
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return data.employees;
+    return data.employees.filter(emp => {
+      const name = `${emp.firstName} ${emp.lastName}`.toLowerCase();
+      const clientNames = emp.projectIds
+        .map(pid => data.projects.find(p => p.id === pid))
+        .map(p => (p?.clientId ? data.clients.find(c => c.id === p.clientId)?.name : undefined))
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return name.includes(q) || clientNames.includes(q) || emp.title.toLowerCase().includes(q);
+    });
+  }, [data.employees, data.projects, data.clients, search]);
+
+  const activeCount = data.employees.filter(e => e.status === 'active').length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl">Employees</h1>
-          <p className="text-[var(--ink-soft)] mt-1">Profiles, onboarding, projects, and pay rates.</p>
+          <p className="text-[var(--ink-soft)] mt-1">{data.employees.length} people · {activeCount} active</p>
         </div>
         <Button onClick={() => setShowNew(true)}>+ Add employee</Button>
       </div>
 
+      <div className="relative">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, title, or client…"
+          className={inputClass + ' pl-9'}
+        />
+      </div>
+
       <div className="grid grid-cols-3 gap-4">
-        {data.employees.map(emp => {
-          const docs = data.onboardingDocs.filter(d => d.employeeId === emp.id && d.required);
-          const docsDone = docs.filter(d => d.status === 'signed' || d.status === 'waived').length;
+        {filtered.map(emp => {
+          const primaryProject = data.projects.find(p => p.id === emp.projectIds[0]);
+          const primaryClient = primaryProject?.clientId ? data.clients.find(c => c.id === primaryProject.clientId) : undefined;
+          const rateForPrimary = primaryProject ? emp.rates.find(r => r.projectId === primaryProject.id)?.hourlyRate : undefined;
+          const rate = rateForPrimary ?? emp.defaultHourlyRate;
+          const hoursThisWeek = data.timesheets
+            .filter(t => t.employeeId === emp.id && t.weekStartDate === thisWeekStart)
+            .flatMap(t => t.entries)
+            .reduce((s, e) => s + e.hours, 0);
+
           return (
             <Link key={emp.id} to={`/employees/${emp.id}`}>
-              <Card className="hover:shadow-sm transition-shadow h-full">
+              <Card className="interactive h-full">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-[var(--accent-soft)] text-[var(--accent-dark)] flex items-center justify-center font-semibold text-sm">
@@ -38,15 +82,33 @@ export function Employees() {
                   </div>
                   <StatusBadge status={emp.status} />
                 </div>
-                <div className="mt-4 flex items-center justify-between text-sm">
-                  <span className="text-[var(--muted)]">{emp.payType === 'hourly' ? `${money(emp.defaultHourlyRate)}/hr` : `${money(emp.salaryAnnual ?? 0)}/yr`}</span>
-                  <span className="text-xs tabular text-[var(--muted)]">{docsDone}/{docs.length} docs</span>
+                <div className="mt-4 pt-3 border-t border-[var(--border-soft)] text-sm space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-[var(--muted)]">Placed at</span>
+                    <span className="font-medium">{primaryClient?.name ?? 'Internal'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--muted)]">Rate</span>
+                    <span className="tabular">{emp.payType === 'hourly' ? `${money(rate)}/hr` : `${money(emp.salaryAnnual ?? 0)}/yr`}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[var(--muted)]">This week</span>
+                    <span className="tabular">{hoursThisWeek ? `${hoursThisWeek}h` : '—'}</span>
+                  </div>
                 </div>
               </Card>
             </Link>
           );
         })}
       </div>
+
+      {filtered.length === 0 && (
+        <EmptyState
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /></svg>}
+          title={search ? 'No employees match your search' : 'No employees yet'}
+          subtitle={search ? 'Try a different name, title, or client.' : 'Add your first employee to get started.'}
+        />
+      )}
 
       {showNew && (
         <NewEmployeeModal

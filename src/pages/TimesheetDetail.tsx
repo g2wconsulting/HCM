@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
-import { Badge, Button, Card, SectionLabel } from '../components/ui';
+import { Badge, Button, Card, SectionLabel, inputClass } from '../components/ui';
 import { formatDate, formatDateShort, hours as fmtHours, downloadCsv } from '../lib/format';
 import { SignaturePad, SignaturePreview } from '../components/SignaturePad';
 import { ClockWidget } from '../components/ClockWidget';
+import { supabase } from '../lib/supabaseClient';
 import { uid } from '../lib/db';
 import type { TimeEntry } from '../lib/types';
 
@@ -70,11 +71,6 @@ export function TimesheetDetail() {
   const regular = weekTotal - overtime;
 
   const editable = isAdmin ? ts.status !== 'paid' : (ts.status === 'draft' || ts.status === 'rejected');
-
-  function submit() {
-    if (weekTotal === 0) return;
-    setShowSignEmployee(true);
-  }
 
   function handleEmployeeSign(sig: any) {
     updateTimesheet(ts!.id, { status: 'submitted', submittedAt: new Date().toISOString(), employeeSignature: sig, rejectionReason: undefined });
@@ -215,53 +211,170 @@ export function TimesheetDetail() {
         <Card><SectionLabel>Total this week</SectionLabel><div className="font-display text-2xl tabular">{fmtHours(weekTotal)}</div></Card>
       </div>
 
-      <Card>
-        <SectionLabel>Signatures</SectionLabel>
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <div className="text-xs text-[var(--muted)] mb-2">Employee certification</div>
-            {ts.employeeSignature ? <SignaturePreview sig={ts.employeeSignature} /> : <span className="text-sm text-[var(--muted)]">Not yet signed</span>}
-          </div>
-          <div>
-            <div className="text-xs text-[var(--muted)] mb-2">Manager approval</div>
-            {ts.approverSignature ? <SignaturePreview sig={ts.approverSignature} /> : <span className="text-sm text-[var(--muted)]">Not yet signed</span>}
-          </div>
-        </div>
-      </Card>
+      {isAdmin && ts.status !== 'paid' && (
+        <SendForApprovalCard employeeId={employee.id} timesheetId={ts.id} rangeStart={ts.weekStartDate} rangeEnd={ts.weekEndDate} clientApprovedAt={ts.clientApprovedAt} />
+      )}
 
-      {showSignEmployee && (
-        <SignaturePad defaultName={`${employee.firstName} ${employee.lastName}`} onSign={handleEmployeeSign} onCancel={() => setShowSignEmployee(false)} />
-      )}
-      {showSignApprover && isAdmin && (
-        <SignaturePad defaultName="" onSign={handleApproverSign} onCancel={() => setShowSignApprover(false)} />
-      )}
-      {showReject && isAdmin && (
+      <div className="grid grid-cols-2 gap-4">
         <Card>
-          <SectionLabel>Reason for sending back</SectionLabel>
-          <textarea value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} rows={3}
-            className="focus-ring w-full rounded-md border border-[var(--border)] px-3 py-2 text-sm" placeholder="e.g. Wednesday hours look off — please double-check." />
-          <div className="flex gap-2 mt-3">
-            <Button variant="danger" onClick={reject}>Send back to employee</Button>
-            <Button variant="ghost" onClick={() => setShowReject(false)}>Cancel</Button>
-          </div>
+          <SectionLabel>Employee signature</SectionLabel>
+          {ts.employeeSignature ? (
+            <SignaturePreview sig={ts.employeeSignature} />
+          ) : showSignEmployee ? (
+            <SignaturePad defaultName={`${employee.firstName} ${employee.lastName}`} onSign={handleEmployeeSign} onCancel={() => setShowSignEmployee(false)} />
+          ) : editable ? (
+            <button
+              onClick={() => weekTotal > 0 && setShowSignEmployee(true)}
+              disabled={weekTotal === 0}
+              className="focus-ring w-full rounded-lg border-2 border-dashed border-[var(--border)] py-8 text-center text-sm text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Click to sign &amp; submit for approval
+            </button>
+          ) : (
+            <span className="text-sm text-[var(--muted)]">Not yet signed</span>
+          )}
         </Card>
-      )}
 
-      <div className="flex gap-3">
-        {editable && (
-          <Button onClick={submit} disabled={weekTotal === 0}>Sign &amp; submit for approval</Button>
-        )}
-        {ts.status === 'submitted' && isAdmin && !showSignApprover && (
-          <>
-            <Button onClick={() => setShowSignApprover(true)}>Approve &amp; sign</Button>
-            <Button variant="secondary" onClick={() => setShowReject(true)}>Send back</Button>
-          </>
-        )}
-        {ts.status === 'approved' && isAdmin && (
-          <Button variant="secondary" onClick={() => navigate('/payroll')}>Go run payroll →</Button>
-        )}
+        <Card>
+          <SectionLabel>{isAdmin ? 'Review actions' : 'Approval status'}</SectionLabel>
+          {isAdmin ? (
+            <div className="flex flex-col gap-2">
+              {showSignApprover ? (
+                <SignaturePad defaultName="" onSign={handleApproverSign} onCancel={() => setShowSignApprover(false)} />
+              ) : showReject ? (
+                <div className="space-y-3">
+                  <textarea value={rejectionNote} onChange={e => setRejectionNote(e.target.value)} rows={3}
+                    className={inputClass} placeholder="e.g. Wednesday hours look off — please double-check." />
+                  <div className="flex gap-2">
+                    <Button variant="danger" onClick={reject}>Send back to employee</Button>
+                    <Button variant="ghost" onClick={() => setShowReject(false)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Button
+                    variant={ts.status === 'submitted' ? 'primary' : 'secondary'}
+                    disabled={ts.status !== 'submitted'}
+                    onClick={() => setShowSignApprover(true)}
+                    fullWidth
+                  >
+                    ✓ Approve timesheet
+                  </Button>
+                  <Button variant="secondary" disabled={ts.status !== 'submitted'} onClick={() => setShowReject(true)} fullWidth>
+                    Request changes
+                  </Button>
+                  <Button variant="danger" disabled={ts.status !== 'submitted'} onClick={() => setShowReject(true)} fullWidth>
+                    Reject
+                  </Button>
+                  {ts.approverSignature && (
+                    <div className="pt-2 mt-1 border-t border-[var(--border-soft)]">
+                      <SignaturePreview sig={ts.approverSignature} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[var(--muted)]">Internal approval</span>
+                <Badge tone={ts.approverSignature ? 'good' : 'neutral'}>{ts.approverSignature ? 'approved' : 'pending'}</Badge>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[var(--muted)]">External signature</span>
+                <Badge tone={ts.clientApprovedAt ? 'good' : 'neutral'}>{ts.clientApprovedAt ? 'signed' : 'not sent'}</Badge>
+              </div>
+            </div>
+          )}
+        </Card>
       </div>
+
+      {ts.status === 'approved' && isAdmin && (
+        <Button variant="secondary" onClick={() => navigate('/payroll')}>Go run payroll →</Button>
+      )}
     </div>
+  );
+}
+
+function SendForApprovalCard({
+  employeeId, timesheetId, rangeStart, rangeEnd, clientApprovedAt,
+}: {
+  employeeId: string; timesheetId: string; rangeStart: string; rangeEnd: string; clientApprovedAt?: string;
+}) {
+  const { data, addSignatureRequest } = useApp();
+  const [showNote, setShowNote] = useState(false);
+  const [note, setNote] = useState('');
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const pastRequests = data.signatureRequests.filter(r => r.timesheetIds.includes(timesheetId));
+  const latest = pastRequests[pastRequests.length - 1];
+
+  async function send() {
+    if (!email.trim()) return;
+    setSubmitting(true);
+    setStatus(null);
+    const created = await addSignatureRequest({
+      employeeId, timesheetIds: [timesheetId], rangeStart, rangeEnd,
+      recipientName: name.trim() || email.trim(), recipientEmail: email.trim(),
+    } as any);
+    if (!created) { setStatus('Could not create the signature request.'); setSubmitting(false); return; }
+    const { error: fnErr } = await supabase.functions.invoke('send-signature-request', {
+      body: { requestId: created.id, siteUrl: window.location.origin },
+    });
+    setSubmitting(false);
+    if (fnErr) { setStatus(`Saved, but the email failed to send: ${fnErr.message}. Check the Edge Function is deployed (see README).`); return; }
+    setStatus(`Sent to ${email.trim()}.`);
+    setEmail(''); setName(''); setNote(''); setShowNote(false);
+  }
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3">
+        <div className="icon-chip bg-[var(--accent-soft)] text-[var(--accent-dark)] shrink-0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3h7v7M21 3 10 14M19 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h6" /></svg>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Send for external approval</div>
+          <p className="text-sm text-[var(--muted)] mt-0.5">
+            Send a secure signing link to a hiring manager — no Ledgerline account required.
+          </p>
+
+          {clientApprovedAt ? (
+            <div className="mt-3 flex items-center gap-2">
+              <Badge tone="good">signed {formatDate(clientApprovedAt.slice(0, 10))}</Badge>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <div className="flex gap-2">
+                <input value={email} onChange={e => setEmail(e.target.value)} placeholder="hiringmanager@client.com" className={inputClass} />
+                <Button onClick={send} disabled={submitting || !email.trim()}>
+                  {submitting ? 'Sending…' : '↗ Send for approval'}
+                </Button>
+              </div>
+              <button onClick={() => setShowNote(v => !v)} className="focus-ring text-xs text-[var(--muted)] hover:text-[var(--ink)]">
+                {showNote ? '▾' : '▸'} Add a note to the recipient
+              </button>
+              {showNote && (
+                <div className="space-y-2">
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="Recipient name (optional)" className={inputClass} />
+                  <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Optional note…" className={inputClass} />
+                </div>
+              )}
+              <p className="text-xs text-[var(--muted)]">
+                Recipient gets a one-time secure link to review hours and sign — works like DocuSign, no account needed.
+              </p>
+            </div>
+          )}
+          {status && <p className="text-xs text-[var(--accent-dark)] mt-2">{status}</p>}
+          {latest && !clientApprovedAt && (
+            <p className="text-xs text-[var(--muted)] mt-2">Last sent to {latest.recipientEmail} · {latest.status}</p>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 

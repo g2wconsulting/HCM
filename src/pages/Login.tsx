@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { Button } from '../components/ui';
@@ -47,12 +48,12 @@ export function Login() {
           <span className="font-display text-xl">Ledgerline</span>
         </div>
         <div className="relative space-y-4 max-w-md">
-          <p className="font-display text-3xl leading-snug">
-            Timekeeping, payroll, and client visibility — in one place.
+          <p className="font-display text-4xl leading-[1.15] font-semibold">
+            Clean books.<br />
+            <span className="text-[var(--accent)]">Confident</span> payroll.
           </p>
           <p className="text-white/60 text-sm leading-relaxed">
-            Employees log hours, managers approve on the spot, and clients see
-            exactly what they need to — nothing more.
+            Timekeeping and payroll solutions for companies who need it done right.
           </p>
         </div>
         <div className="relative text-xs text-white/40">
@@ -133,6 +134,9 @@ export function Login() {
           )}
           <p className="text-xs text-[var(--muted)] text-center mt-5">
             No account yet? Ask your admin to set one up for you.
+          </p>
+          <p className="text-xs text-[var(--muted)] text-center mt-2">
+            Need to sign a document? <Link to="/sign" className="text-[var(--accent)] font-medium hover:underline">Go to signing page →</Link>
           </p>
         </div>
       </div>

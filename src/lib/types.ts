@@ -97,6 +97,7 @@ export interface Project {
   code: string;
   active: boolean;
   billRate?: number; // optional, for internal reference/client billing
+  budget?: number; // optional total budget for progress tracking
   createdAt: string;
 }
 

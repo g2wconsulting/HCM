@@ -79,7 +79,7 @@ export function EmptyState({
 }
 
 export function IconStat({
-  icon, tone = 'accent', label, value, sub, subTone,
+  icon, tone = 'accent', label, value, sub, subTone, iconPosition = 'left',
 }: {
   icon: ReactNode;
   tone?: 'accent' | 'secondary' | 'good' | 'bad' | 'pending';
@@ -87,6 +87,7 @@ export function IconStat({
   value: string;
   sub?: string;
   subTone?: 'pending' | 'bad' | 'good';
+  iconPosition?: 'left' | 'right';
 }) {
   const chipStyles: Record<string, string> = {
     accent: 'bg-[var(--accent-soft)] text-[var(--accent-dark)]',
@@ -96,6 +97,22 @@ export function IconStat({
     pending: 'bg-[var(--pending-soft)] text-[var(--pending)]',
   };
   const subColor = subTone === 'bad' ? 'text-[var(--bad)]' : subTone === 'pending' ? 'text-[var(--pending)]' : subTone === 'good' ? 'text-[var(--good)]' : 'text-[var(--muted)]';
+
+  if (iconPosition === 'right') {
+    return (
+      <Card>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold tracking-wide uppercase text-[var(--muted)]">{label}</div>
+            <div className="font-display text-3xl mt-2 tabular">{value}</div>
+            {sub && <div className={`text-xs mt-1 ${subColor}`}>{sub}</div>}
+          </div>
+          <div className={`icon-chip shrink-0 ${chipStyles[tone]}`}>{icon}</div>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <div className="flex items-start gap-3">

@@ -10,6 +10,24 @@ const STATUS_TONE: Record<TimesheetStatus, 'good' | 'bad' | 'pending' | 'neutral
   draft: 'neutral', submitted: 'pending', approved: 'good', rejected: 'bad', paid: 'neutral',
 };
 
+const STATUS_FILTERS: { value: 'all' | TimesheetStatus; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'submitted', label: 'Pending' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'draft', label: 'Draft' },
+];
+
+function clientLabelFor(ts: { entries: { projectId: string | null }[] }, projects: { id: string; clientId: string | null }[], clients: { id: string; name: string }[]): string {
+  const clientIds = new Set(
+    ts.entries.map(e => projects.find(p => p.id === e.projectId)?.clientId).filter(Boolean) as string[]
+  );
+  if (clientIds.size === 0) return 'Internal';
+  if (clientIds.size > 1) return 'Multiple';
+  return clients.find(c => c.id === [...clientIds][0])?.name ?? 'Internal';
+}
+
 function mondayOf(date: Date): Date {
   const d = new Date(date);
   const day = d.getDay();
@@ -71,7 +89,7 @@ export function Timesheets() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-3xl">Timesheets</h1>
-          <p className="text-[var(--ink-soft)] mt-1">Weekly hours, submitted for biweekly payroll approval.</p>
+          <p className="text-[var(--ink-soft)] mt-1">{visibleTimesheets.length} total · {visibleTimesheets.filter(t => t.status === 'submitted').length} pending review</p>
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && <Button variant="secondary" onClick={() => setShowExport(true)}>Export range to PDF</Button>}
@@ -87,14 +105,19 @@ export function Timesheets() {
       {showExport && <ExportRangeModal onClose={() => setShowExport(false)} />}
 
       <div className="flex items-center gap-3">
-        <select value={filter} onChange={e => setFilter(e.target.value as any)} className="focus-ring rounded-md border border-[var(--border)] bg-white px-3 py-1.5 text-sm">
-          <option value="all">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="submitted">Submitted</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="paid">Paid</option>
-        </select>
+        <div className="flex items-center gap-1 bg-[var(--border-soft)]/60 rounded-full p-1">
+          {STATUS_FILTERS.map(f => (
+            <button
+              key={f.value}
+              onClick={() => setFilter(f.value)}
+              className={`focus-ring px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                filter === f.value ? 'bg-[var(--ink)] text-white' : 'text-[var(--ink-soft)] hover:bg-white/60'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
         <select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className="focus-ring rounded-md border border-[var(--border)] bg-white px-3 py-1.5 text-sm">
           <option value="all">All employees</option>
           {data.employees.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
@@ -106,6 +129,7 @@ export function Timesheets() {
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-[var(--muted)] border-b border-[var(--border)]">
               <th className="px-5 py-3 font-semibold">Employee</th>
+              <th className="px-5 py-3 font-semibold">Client</th>
               <th className="px-5 py-3 font-semibold">Week</th>
               <th className="px-5 py-3 font-semibold text-right">Hours</th>
               <th className="px-5 py-3 font-semibold">Status</th>
@@ -120,6 +144,7 @@ export function Timesheets() {
               return (
                 <tr key={ts.id} className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--paper)]/60">
                   <td className="px-5 py-3 font-medium">{emp?.firstName} {emp?.lastName}</td>
+                  <td className="px-5 py-3 text-[var(--ink-soft)]">{clientLabelFor(ts, data.projects, data.clients)}</td>
                   <td className="px-5 py-3 text-[var(--ink-soft)]">{formatDate(ts.weekStartDate)} – {formatDate(ts.weekEndDate)}</td>
                   <td className="px-5 py-3 text-right tabular">{fmtHours(total)}</td>
                   <td className="px-5 py-3"><Badge tone={STATUS_TONE[ts.status]}>{ts.status}</Badge></td>
@@ -133,13 +158,15 @@ export function Timesheets() {
                     </button>
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <Link to={`/timesheets/${ts.id}`} className="focus-ring text-[var(--accent)] font-medium hover:underline">Open →</Link>
+                    <Link to={`/timesheets/${ts.id}`} className="focus-ring text-[var(--accent)] font-medium hover:underline">
+                      {ts.status === 'submitted' ? 'Review →' : 'View →'}
+                    </Link>
                   </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="p-0">
+              <tr><td colSpan={7} className="p-0">
                 <EmptyState
                   icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></svg>}
                   title="No timesheets match these filters"

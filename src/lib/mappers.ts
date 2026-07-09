@@ -109,6 +109,7 @@ export function rowToProject(r: any): Project {
   return {
     id: r.id, companyId: r.company_id, clientId: r.client_id ?? null, name: r.name, clientName: r.client_name ?? undefined,
     code: r.code, active: r.active, billRate: r.bill_rate != null ? Number(r.bill_rate) : undefined,
+    budget: r.budget != null ? Number(r.budget) : undefined,
     createdAt: r.created_at,
   };
 }
@@ -121,6 +122,7 @@ export function projectToRow(p: Partial<Project> & { companyId?: string }): any 
   if (p.code !== undefined) row.code = p.code;
   if (p.active !== undefined) row.active = p.active;
   if (p.billRate !== undefined) row.bill_rate = p.billRate;
+  if (p.budget !== undefined) row.budget = p.budget;
   return row;
 }
 

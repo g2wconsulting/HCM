@@ -21,8 +21,10 @@ In the Supabase SQL editor, run each of these once, in order:
 1. `supabase/schema.sql`
 2. `supabase/migration_002_client_portal.sql`
 3. `supabase/migration_003_forms_and_clock.sql`
+4. `supabase/migration_004_signature_requests.sql`
+5. `supabase/migration_005_project_budget.sql`
 
-(All three files are safe to re-run if you're ever unsure whether one applied — every `create policy` and constraint is guarded so re-running won't error.)
+(All files are safe to re-run if you're ever unsure whether one applied — every `create policy` and constraint is guarded so re-running won't error.)
 
 ### 2. Create a Storage bucket
 
