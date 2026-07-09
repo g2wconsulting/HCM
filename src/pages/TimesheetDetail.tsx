@@ -69,7 +69,7 @@ export function TimesheetDetail() {
   const overtime = Math.max(0, weekTotal - overtimeThreshold);
   const regular = weekTotal - overtime;
 
-  const editable = ts.status === 'draft' || ts.status === 'rejected';
+  const editable = isAdmin ? ts.status !== 'paid' : (ts.status === 'draft' || ts.status === 'rejected');
 
   function submit() {
     if (weekTotal === 0) return;
@@ -123,6 +123,20 @@ export function TimesheetDetail() {
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={ts.status} />
+          {isAdmin && ts.status !== 'paid' && (
+            <select
+              value={ts.status}
+              onChange={e => updateTimesheet(ts.id, { status: e.target.value as any })}
+              className="focus-ring rounded-md border border-[var(--border)] bg-white px-2 py-1.5 text-xs"
+              title="Admin override: set status directly"
+            >
+              <option value="draft">Draft</option>
+              <option value="submitted">Submitted</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="paid">Paid</option>
+            </select>
+          )}
           <Button variant="secondary" onClick={exportCsv}>Export CSV</Button>
         </div>
       </div>

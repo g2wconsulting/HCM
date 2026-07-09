@@ -6,6 +6,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Timesheets } from './pages/Timesheets';
 import { TimesheetDetail } from './pages/TimesheetDetail';
+import { ExportTimesheets } from './pages/ExportTimesheets';
 import { Employees } from './pages/Employees';
 import { EmployeeDetail } from './pages/EmployeeDetail';
 import { Clients } from './pages/Clients';
@@ -71,6 +72,7 @@ function GatedApp() {
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/timesheets" element={<RoleOnly roles={['admin', 'employee']}><Timesheets /></RoleOnly>} />
+          <Route path="/timesheets/export" element={<RoleOnly roles={['admin']}><ExportTimesheets /></RoleOnly>} />
           <Route path="/timesheets/:id" element={<RoleOnly roles={['admin', 'employee']}><TimesheetDetail /></RoleOnly>} />
           <Route path="/my-pay" element={<RoleOnly roles={['employee']}><MyPay /></RoleOnly>} />
           <Route path="/my-onboarding" element={<RoleOnly roles={['employee']}><MyOnboarding /></RoleOnly>} />

@@ -138,6 +138,34 @@ HTTPS, with `try_files $uri /index.html;` for client-side routing.
   Admins can see and manage the status; clients see it only if the admin
   leaves "visible to client" checked (on by default).
 
+## Timesheets — admin control and PDF export
+
+Admins can now create a timesheet for **any employee, any week** (not
+just "start this week" for whichever employee happened to be first in
+the list) via **Timesheets → + New timesheet**. Admins can also edit
+hours on a timesheet in any status except "paid" — so a mistake found
+after approval can still be fixed before payroll runs, without needing
+to reject and restart the whole sign-off flow. A status dropdown next to
+the badge on a timesheet's detail page lets an admin set status directly
+if needed, bypassing the normal sign/approve flow entirely.
+
+**Exporting to PDF**: from the Timesheets list, **Export range to PDF**
+lets you pick an employee and a date range (a single week or several —
+it grabs every week that overlaps the range) and generates a combined
+PDF: each week's hours by project, any signatures already captured
+in-app, a running total, and a blank signature block at the end for
+sending out for a fresh e-signature. From there:
+- **Download PDF** — saves the file locally.
+- **Share / Email PDF** — on browsers/devices that support the Web
+  Share API with file attachments (most mobile browsers, some desktop
+  ones), this opens your device's normal share sheet with the PDF
+  attached — pick Mail, Gmail, Slack, whatever you want. On browsers
+  that don't support this (some desktop browsers), it downloads the PDF
+  and opens a blank email with instructions to attach it manually — true
+  automatic "download happens, email sends with attachment already on
+  it" behavior would require a backend email service (see below), which
+  isn't wired up yet.
+
 ## Clock in/out
 
 Employees can either type hours into the weekly grid (as before) or use
