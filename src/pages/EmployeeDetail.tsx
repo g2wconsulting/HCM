@@ -73,6 +73,11 @@ export function EmployeeDetail() {
   const hasLogin = data.profiles.some(p => p.employeeId === employee.id);
   const hasPayrollHistory = data.payrollRuns.some(r => r.lineItems.some(l => l.employeeId === employee.id));
 
+  const isArchived = employee.status === 'terminated';
+  function toggleArchive() {
+    updateEmployee(employee!.id, { status: isArchived ? 'active' : 'terminated' });
+  }
+
   async function handleDelete() {
     setDeleting(true);
     const ok = await deleteEmployee(employee!.id);
@@ -103,38 +108,11 @@ export function EmployeeDetail() {
             <option value="inactive">Inactive</option>
             <option value="terminated">Terminated</option>
           </select>
-          <Button variant="danger" size="sm" onClick={() => setShowDeleteConfirm(true)}>Delete employee</Button>
+          <Button variant="secondary" size="sm" onClick={toggleArchive}>
+            {isArchived ? 'Restore employee' : 'Archive employee'}
+          </Button>
         </div>
       </div>
-
-      {showDeleteConfirm && (
-        <div className="rounded-md border border-[var(--bad)]/30 bg-[var(--bad-soft)] px-4 py-4 text-sm space-y-3">
-          <p className="text-[var(--bad)] font-medium">
-            Permanently delete {employee.firstName} {employee.lastName}? This cannot be undone.
-          </p>
-          <ul className="list-disc pl-5 text-[var(--ink-soft)] space-y-1">
-            <li>Their timesheets, onboarding documents, forms, and tax profile will be permanently deleted.</li>
-            {hasLogin && (
-              <li>They have a portal login — it won't be deleted, but will be disconnected from this record.
-                Their email won't be available to invite a new employee until that login is removed in Supabase.</li>
-            )}
-            {hasPayrollHistory && (
-              <li>They appear in past payroll runs — those records are kept as-is (dollar amounts stay accurate),
-                but will show a blank name once this record is gone.</li>
-            )}
-          </ul>
-          <p className="text-[var(--ink-soft)]">
-            If this person simply no longer works here, use the status dropdown above and set it to
-            <strong> Terminated</strong> instead — that keeps all their history intact and just archives them.
-          </p>
-          <div className="flex gap-2 pt-1">
-            <Button variant="danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? 'Deleting…' : 'Yes, permanently delete'}
-            </Button>
-            <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
-          </div>
-        </div>
-      )}
 
       {employee.status === 'onboarding' && !allDocsSigned && (
         <div className="rounded-md border border-[var(--pending)]/30 bg-[var(--pending-soft)] px-4 py-3 text-sm text-[var(--pending)]">
@@ -290,6 +268,39 @@ export function EmployeeDetail() {
       <AccommodationCard employeeId={employee.id} />
       <FormsCard employeeId={employee.id} />
       <NotesCard employeeId={employee.id} />
+
+      <div className="pt-6 border-t border-[var(--border-soft)] flex flex-col items-end gap-3">
+        {!showDeleteConfirm ? (
+          <Button variant="danger" size="sm" onClick={() => setShowDeleteConfirm(true)}>Delete employee</Button>
+        ) : (
+          <div className="rounded-md border border-[var(--bad)]/30 bg-[var(--bad-soft)] px-4 py-4 text-sm space-y-3 w-full max-w-lg">
+            <p className="text-[var(--bad)] font-medium">
+              Permanently delete {employee.firstName} {employee.lastName}? This cannot be undone.
+            </p>
+            <ul className="list-disc pl-5 text-[var(--ink-soft)] space-y-1">
+              <li>Their timesheets, onboarding documents, forms, and tax profile will be permanently deleted.</li>
+              {hasLogin && (
+                <li>They have a portal login — it won't be deleted, but will be disconnected from this record.
+                  Their email won't be available to invite a new employee until that login is removed in Supabase.</li>
+              )}
+              {hasPayrollHistory && (
+                <li>They appear in past payroll runs — those records are kept as-is (dollar amounts stay accurate),
+                  but will show a blank name once this record is gone.</li>
+              )}
+            </ul>
+            <p className="text-[var(--ink-soft)]">
+              If this person simply no longer works here, use <strong>Archive employee</strong> at the top of the
+              page instead — that keeps all their history intact and just hides them from the main list.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="danger" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Yes, permanently delete'}
+              </Button>
+              <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
