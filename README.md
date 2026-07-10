@@ -259,6 +259,25 @@ You can track status (sent / viewed / signed) back on that export page.
 That's it — no changes needed to your `.env` or Vercel settings, since
 this function runs on Supabase's servers, not yours.
 
+### Sender branding if you have multiple companies using this platform
+
+Every company currently sends through the **one** Resend domain you
+verify above — there's no per-company DNS setup required. What *is*
+per-company is the "From" display name: `send-signature-request`
+builds it as `"<company name> (via Ledgerline) <verified@address>"`, so
+a hiring manager sees which company the request is actually from, even
+though every company shares the same underlying sending domain.
+
+If a particular client later wants their emails to come from their
+*own* verified domain (true white-label — `timesheets@theirdomain.com`
+instead of yours), that's a bigger, separate feature: it needs a
+per-company sender address stored on the `companies` row (populated
+once that company verifies their own domain in Resend), looked up in
+`buildFromAddress()` in `supabase/functions/send-signature-request/index.ts`
+instead of always using the shared `RESEND_FROM`. Not built yet —
+flagging it here so it's easy to pick up later without re-deriving the
+plan.
+
 ### If you don't want to set this up right now
 
 The **Download PDF** and **Share / Email PDF** buttons next to "Send for

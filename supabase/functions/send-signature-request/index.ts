@@ -23,6 +23,33 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'onboarding@resend.dev';
 
+// Parses "Display Name <email@domain.com>" (or a bare email address) into its parts.
+function parseFromAddress(raw: string): { name: string | null; email: string } {
+  const match = raw.match(/^(.*)<(.+)>$/);
+  if (match) {
+    const name = match[1].trim().replace(/^"|"$/g, '');
+    return { name: name || null, email: match[2].trim() };
+  }
+  return { name: null, email: raw.trim() };
+}
+
+// Builds the "From" header for a signature-request email sent on behalf of
+// `companyName`. Every company currently shares one verified Resend sending
+// domain (RESEND_FROM), so this just swaps in the sending company's name as
+// the display name — recipients see "Acme Staffing (via Ledgerline)" instead
+// of a generic sender, with no per-company DNS setup required.
+//
+// Full white-label (a company sending from its *own* verified domain, e.g.
+// timesheets@acmestaffing.com) is a separate, bigger feature: it would need
+// a per-company sender address stored on the `companies` row (populated once
+// that company verifies their own domain in Resend), looked up here instead
+// of always using RESEND_FROM. This function is the one place that decision
+// would plug into — everything else in this file stays the same.
+function buildFromAddress(companyName: string): string {
+  const { email } = parseFromAddress(RESEND_FROM);
+  return `${companyName} (via Ledgerline) <${email}>`;
+}
+
 Deno.serve(async (req) => {
   const cors = {
     'Access-Control-Allow-Origin': '*',
@@ -89,8 +116,9 @@ Deno.serve(async (req) => {
     const signLink = `${siteUrl}/sign/${sigReq.token}`;
     const employeeName = employee ? `${employee.first_name} ${employee.last_name}` : 'an employee';
     const companyName = company?.name ?? 'Ledgerline';
+    const fromAddress = buildFromAddress(companyName);
 
-    console.log('send-signature-request: sending via Resend to', sigReq.recipient_email, 'from', RESEND_FROM);
+    console.log('send-signature-request: sending via Resend to', sigReq.recipient_email, 'from', fromAddress);
 
     const html = `
       <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
@@ -113,7 +141,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: RESEND_FROM,
+        from: fromAddress,
         to: sigReq.recipient_email,
         subject: `${employeeName}'s timesheets — signature requested`,
         html,
