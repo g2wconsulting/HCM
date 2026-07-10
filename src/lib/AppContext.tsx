@@ -23,6 +23,11 @@ interface AppContextValue {
   setCompany: (c: Partial<Company>) => Promise<void>;
   addEmployee: (e: Omit<Employee, 'id' | 'createdAt'>) => Promise<Employee | null>;
   updateEmployee: (id: string, patch: Partial<Employee>) => Promise<void>;
+  // Permanently removes the employee row. Cascades server-side to their
+  // timesheets, onboarding docs, form submissions, signature requests, and
+  // tax info — none of that is recoverable. Use updateEmployee(id, {status:
+  // 'terminated'}) instead for someone who's simply no longer employed.
+  deleteEmployee: (id: string) => Promise<boolean>;
   addProject: (p: Omit<Project, 'id' | 'createdAt'>) => Promise<Project | null>;
   updateProject: (id: string, patch: Partial<Project>) => Promise<void>;
   addClient: (c: Omit<Client, 'id' | 'createdAt'>) => Promise<Client | null>;
@@ -173,6 +178,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setData(prev => ({ ...prev, employees: prev.employees.map(e => e.id === id ? { ...e, ...patch } : e) }));
       const { error } = await supabase.from('employees').update(employeeToRow(patch)).eq('id', id);
       if (error) { console.error(error); refresh(); }
+    },
+    deleteEmployee: async (id) => {
+      const { error } = await supabase.from('employees').delete().eq('id', id);
+      if (error) { console.error(error); return false; }
+      setData(prev => ({
+        ...prev,
+        employees: prev.employees.filter(e => e.id !== id),
+        timesheets: prev.timesheets.filter(t => t.employeeId !== id),
+        onboardingDocs: prev.onboardingDocs.filter(d => d.employeeId !== id),
+        formSubmissions: prev.formSubmissions.filter(s => s.employeeId !== id),
+        signatureRequests: prev.signatureRequests.filter(r => r.employeeId !== id),
+        notes: prev.notes.filter(n => n.employeeId !== id),
+        accommodationRequests: prev.accommodationRequests.filter(a => a.employeeId !== id),
+        // server sets profiles.employee_id to null via ON DELETE SET NULL — their
+        // login isn't deleted, just disconnected from the (now-gone) employee.
+        profiles: prev.profiles.map(p => p.employeeId === id ? { ...p, employeeId: null } : p),
+      }));
+      return true;
     },
 
     addProject: async (p) => {

@@ -17,13 +17,16 @@ export function Employees() {
   const { data } = useApp();
   const [showNew, setShowNew] = useState(false);
   const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
 
   const thisWeekStart = mondayIso(new Date());
+  const archivedCount = data.employees.filter(e => e.status === 'terminated').length;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return data.employees;
-    return data.employees.filter(emp => {
+    const base = showArchived ? data.employees : data.employees.filter(e => e.status !== 'terminated');
+    if (!q) return base;
+    return base.filter(emp => {
       const name = `${emp.firstName} ${emp.lastName}`.toLowerCase();
       const clientNames = emp.projectIds
         .map(pid => data.projects.find(p => p.id === pid))
@@ -33,7 +36,7 @@ export function Employees() {
         .toLowerCase();
       return name.includes(q) || clientNames.includes(q) || emp.title.toLowerCase().includes(q);
     });
-  }, [data.employees, data.projects, data.clients, search]);
+  }, [data.employees, data.projects, data.clients, search, showArchived]);
 
   const activeCount = data.employees.filter(e => e.status === 'active').length;
 
@@ -47,13 +50,21 @@ export function Employees() {
         <Button onClick={() => setShowNew(true)}>+ Add employee</Button>
       </div>
 
-      <div className="relative">
-        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name, title, or client…"
-          className={inputClass + ' pl-9'}
-        />
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, title, or client…"
+            className={inputClass + ' pl-9'}
+          />
+        </div>
+        {archivedCount > 0 && (
+          <label className="flex items-center gap-2 text-sm text-[var(--ink-soft)] whitespace-nowrap shrink-0">
+            <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+            Show archived ({archivedCount})
+          </label>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4">
@@ -105,8 +116,8 @@ export function Employees() {
       {filtered.length === 0 && (
         <EmptyState
           icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /></svg>}
-          title={search ? 'No employees match your search' : 'No employees yet'}
-          subtitle={search ? 'Try a different name, title, or client.' : 'Add your first employee to get started.'}
+          title={search ? 'No employees match your search' : !showArchived && archivedCount > 0 ? 'No active employees' : 'No employees yet'}
+          subtitle={search ? 'Try a different name, title, or client.' : !showArchived && archivedCount > 0 ? 'Check "Show archived" to see former employees.' : 'Add your first employee to get started.'}
         />
       )}
 

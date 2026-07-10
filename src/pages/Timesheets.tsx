@@ -271,7 +271,8 @@ function TimesheetTable({ rows, showEmpty }: { rows: any[]; showEmpty: boolean }
 
 function NewTimesheetModal({ onClose, onCreate }: { onClose: () => void; onCreate: (employeeId: string, weekStart: string) => void }) {
   const { data } = useApp();
-  const [employeeId, setEmployeeId] = useState(data.employees[0]?.id ?? '');
+  const eligibleEmployees = data.employees.filter(e => e.status !== 'terminated');
+  const [employeeId, setEmployeeId] = useState(eligibleEmployees[0]?.id ?? '');
   const [weekStart, setWeekStart] = useState(isoDate(new Date()));
 
   return (
@@ -281,7 +282,7 @@ function NewTimesheetModal({ onClose, onCreate }: { onClose: () => void; onCreat
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-[var(--ink-soft)]">Employee</label>
           <select value={employeeId} onChange={e => setEmployeeId(e.target.value)} className={inputClass}>
-            {data.employees.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
+            {eligibleEmployees.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">

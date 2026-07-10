@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, Field, SectionLabel, inputClass } from '../components/ui';
@@ -16,9 +16,12 @@ const US_STATES: USState[] = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
 
 export function EmployeeDetail() {
   const { id } = useParams();
-  const { data, updateEmployee, addOnboardingDoc, updateOnboardingDoc, addProject } = useApp();
+  const navigate = useNavigate();
+  const { data, updateEmployee, deleteEmployee, addOnboardingDoc, updateOnboardingDoc, addProject } = useApp();
   const employee = data.employees.find(e => e.id === id);
   const [signingDocId, setSigningDocId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   if (!employee) {
@@ -67,6 +70,15 @@ export function EmployeeDetail() {
   }
 
   const allDocsSigned = docs.filter(d => d.required).every(d => d.status === 'signed' || d.status === 'waived');
+  const hasLogin = data.profiles.some(p => p.employeeId === employee.id);
+  const hasPayrollHistory = data.payrollRuns.some(r => r.lineItems.some(l => l.employeeId === employee.id));
+
+  async function handleDelete() {
+    setDeleting(true);
+    const ok = await deleteEmployee(employee!.id);
+    if (ok) navigate('/employees');
+    else { setDeleting(false); alert('Could not delete this employee — check the browser console for details.'); }
+  }
 
   return (
     <div className="space-y-6">
@@ -91,8 +103,38 @@ export function EmployeeDetail() {
             <option value="inactive">Inactive</option>
             <option value="terminated">Terminated</option>
           </select>
+          <Button variant="danger" size="sm" onClick={() => setShowDeleteConfirm(true)}>Delete employee</Button>
         </div>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="rounded-md border border-[var(--bad)]/30 bg-[var(--bad-soft)] px-4 py-4 text-sm space-y-3">
+          <p className="text-[var(--bad)] font-medium">
+            Permanently delete {employee.firstName} {employee.lastName}? This cannot be undone.
+          </p>
+          <ul className="list-disc pl-5 text-[var(--ink-soft)] space-y-1">
+            <li>Their timesheets, onboarding documents, forms, and tax profile will be permanently deleted.</li>
+            {hasLogin && (
+              <li>They have a portal login — it won't be deleted, but will be disconnected from this record.
+                Their email won't be available to invite a new employee until that login is removed in Supabase.</li>
+            )}
+            {hasPayrollHistory && (
+              <li>They appear in past payroll runs — those records are kept as-is (dollar amounts stay accurate),
+                but will show a blank name once this record is gone.</li>
+            )}
+          </ul>
+          <p className="text-[var(--ink-soft)]">
+            If this person simply no longer works here, use the status dropdown above and set it to
+            <strong> Terminated</strong> instead — that keeps all their history intact and just archives them.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <Button variant="danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Yes, permanently delete'}
+            </Button>
+            <Button variant="ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {employee.status === 'onboarding' && !allDocsSigned && (
         <div className="rounded-md border border-[var(--pending)]/30 bg-[var(--pending-soft)] px-4 py-3 text-sm text-[var(--pending)]">
