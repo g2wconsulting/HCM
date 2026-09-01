@@ -3,13 +3,13 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, SectionLabel, inputClass } from '../components/ui';
-import { formatDate, formatDateShort, hours as fmtHours, downloadCsv, initials } from '../lib/format';
+import { formatDate, formatDateShort, hours as fmtHours, downloadCsv, initials, money } from '../lib/format';
 import { SignaturePad, SignaturePreview } from '../components/SignaturePad';
 import { ClockWidget } from '../components/ClockWidget';
 import { supabase } from '../lib/supabaseClient';
 import { uid } from '../lib/db';
 import { buildTimecardPdf, timecardPdfFileName } from '../lib/pdfExport';
-import { formatTimeLabel } from '../lib/timesheetParser';
+import { formatTimeLabel, buildJobCodeSummary } from '../lib/timesheetParser';
 import { STATUS_TONE, STATUS_LABEL, TimecardRowActions } from './Timesheets';
 import type { TimeEntry, Timesheet, Employee } from '../lib/types';
 
@@ -445,12 +445,29 @@ function StatusBadge({ status }: { status: string }) {
 // Job Code & Allocation Summary, and Employee Verification / Supervisor
 // Approval blocks with signature + timestamp once signed.
 function TimecardDetailView({ ts, employee, isAdmin }: { ts: Timesheet; employee: Employee; isAdmin: boolean }) {
-  const { company, updateTimesheet } = useApp();
+  const { data, company, updateTimesheet } = useApp();
   const [supervisorName, setSupervisorName] = useState(ts.supervisorName ?? '');
   const [supervisorEmail, setSupervisorEmail] = useState(ts.supervisorEmail ?? '');
   const [savingSupervisor, setSavingSupervisor] = useState(false);
 
   const entries = (ts.dailyEntries ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  // Positions (and their block pay) can only be reassigned before the
+  // employee has signed — editing after either signature would silently
+  // change what was already approved.
+  const editablePositions = isAdmin && ts.status === 'draft';
+
+  function setDayPosition(date: string, positionId: string) {
+    const pos = data.positions.find(p => p.id === positionId);
+    const dept = pos ? data.departments.find(d => d.id === pos.departmentId) : undefined;
+    const dailyEntries = (ts.dailyEntries ?? []).map(d => d.date === date ? {
+      ...d,
+      positionId: pos?.id,
+      jobCode: pos ? pos.jobCode : d.jobCode,
+      positionTitle: pos ? pos.title : d.positionTitle,
+      department: dept ? dept.name : d.department,
+    } : d);
+    updateTimesheet(ts.id, { dailyEntries, jobCodeSummary: buildJobCodeSummary(dailyEntries) });
+  }
 
   function exportPdf() {
     const doc = buildTimecardPdf({ company, employee, timesheet: ts });
@@ -525,7 +542,26 @@ function TimecardDetailView({ ts, employee, isAdmin }: { ts: Timesheet; employee
                     </div>
                   ))}
                 </td>
-                <td className="px-3 py-2.5">{d.status === 'WORK' ? [d.jobCode, d.positionTitle].filter(Boolean).join(' · ') || '—' : '—'}</td>
+                <td className="px-3 py-2.5">
+                  {editablePositions && d.status === 'WORK' ? (
+                    <select
+                      value={d.positionId ?? ''}
+                      onChange={e => setDayPosition(d.date, e.target.value)}
+                      className="focus-ring rounded border border-[var(--border)] px-1.5 py-1 text-sm max-w-[220px]"
+                    >
+                      <option value="">{[d.jobCode, d.positionTitle].filter(Boolean).join(' · ') || '— pick position —'}</option>
+                      {data.departments.map(dept => (
+                        <optgroup key={dept.id} label={dept.name}>
+                          {data.positions.filter(p => p.departmentId === dept.id && p.active).map(p => (
+                            <option key={p.id} value={p.id}>{p.title}{p.blockPayAmount != null ? ` (${money(p.blockPayAmount)} block)` : ''}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  ) : (
+                    d.status === 'WORK' ? [d.jobCode, d.positionTitle].filter(Boolean).join(' · ') || '—' : '—'
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-right tabular">{fmtHours(d.hours)}</td>
               </tr>
             ))}

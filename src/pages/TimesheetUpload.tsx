@@ -263,8 +263,9 @@ function ReviewCard({ row, onUpdate, onUpdateDay, onUpdatePayPeriod }: {
                 <th className="py-2 pr-2 font-semibold">Date</th>
                 <th className="py-2 pr-2 font-semibold">Status</th>
                 <th className="py-2 pr-2 font-semibold">Punches</th>
+                <th className="py-2 pr-2 font-semibold">Position (pay)</th>
                 <th className="py-2 pr-2 font-semibold">Job code</th>
-                <th className="py-2 pr-2 font-semibold">Position</th>
+                <th className="py-2 pr-2 font-semibold">Position title</th>
                 <th className="py-2 pr-2 font-semibold">Department</th>
                 <th className="py-2 pr-2 font-semibold text-right">Hours</th>
               </tr>
@@ -292,6 +293,31 @@ function ReviewCard({ row, onUpdate, onUpdateDay, onUpdatePayPeriod }: {
                         }} className="rounded border border-[var(--border)] px-1 py-0.5" />
                       </div>
                     ))}
+                  </td>
+                  <td className="py-2 pr-2">
+                    <select
+                      value={d.positionId ?? ''}
+                      onChange={e => {
+                        const pos = data.positions.find(p => p.id === e.target.value);
+                        const dept = pos ? data.departments.find(dd => dd.id === pos.departmentId) : undefined;
+                        onUpdateDay(d.date, {
+                          positionId: pos?.id,
+                          jobCode: pos ? pos.jobCode : d.jobCode,
+                          positionTitle: pos ? pos.title : d.positionTitle,
+                          department: dept ? dept.name : d.department,
+                        });
+                      }}
+                      className="w-32 rounded border border-[var(--border)] px-1 py-1"
+                    >
+                      <option value="">— none —</option>
+                      {data.departments.map(dept => (
+                        <optgroup key={dept.id} label={dept.name}>
+                          {data.positions.filter(p => p.departmentId === dept.id && p.active).map(p => (
+                            <option key={p.id} value={p.id}>{p.title}{p.blockPayAmount != null ? ` ($${p.blockPayAmount} block)` : ''}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
                   </td>
                   <td className="py-2 pr-2"><input value={d.jobCode ?? ''} onChange={e => onUpdateDay(d.date, { jobCode: e.target.value })} className="w-24 rounded border border-[var(--border)] px-1 py-1" /></td>
                   <td className="py-2 pr-2"><input value={d.positionTitle ?? ''} onChange={e => onUpdateDay(d.date, { positionTitle: e.target.value })} className="w-28 rounded border border-[var(--border)] px-1 py-1" /></td>

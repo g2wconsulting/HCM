@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
 import type {
   AppData, Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission, SignatureRequest, DailyEntry, JobCodeSummaryRow,
+  FormTemplate, FormSubmission, SignatureRequest, DailyEntry, JobCodeSummaryRow, Department, Position,
 } from './types';
 import {
   rowToCompany, companyToRow, rowToEmployee, employeeToRow, rowToProject, projectToRow,
@@ -11,6 +11,7 @@ import {
   rowToClient, clientToRow, rowToNote, noteToRow, rowToAccommodation, accommodationToRow,
   rowToFormTemplate, formTemplateToRow, rowToFormSubmission, formSubmissionToRow,
   rowToSignatureRequest, signatureRequestToRow, rowToProfileSummary,
+  rowToDepartment, departmentToRow, rowToPosition, positionToRow,
 } from './mappers';
 
 interface AppContextValue {
@@ -24,6 +25,10 @@ interface AppContextValue {
   updateEmployee: (id: string, patch: Partial<Employee>) => Promise<void>;
   addProject: (p: Omit<Project, 'id' | 'createdAt'>) => Promise<Project | null>;
   updateProject: (id: string, patch: Partial<Project>) => Promise<void>;
+  addDepartment: (d: Omit<Department, 'id' | 'createdAt'>) => Promise<Department | null>;
+  updateDepartment: (id: string, patch: Partial<Department>) => Promise<void>;
+  addPosition: (p: Omit<Position, 'id' | 'createdAt'>) => Promise<Position | null>;
+  updatePosition: (id: string, patch: Partial<Position>) => Promise<void>;
   addClient: (c: Omit<Client, 'id' | 'createdAt'>) => Promise<Client | null>;
   updateClient: (id: string, patch: Partial<Client>) => Promise<void>;
   addTimesheet: (t: Omit<Timesheet, 'id' | 'createdAt'>) => Promise<Timesheet | null>;
@@ -60,7 +65,7 @@ interface AppContextValue {
 }
 
 const emptyData: AppData = {
-  companies: [], clients: [], employees: [], projects: [], timesheets: [], onboardingDocs: [],
+  companies: [], clients: [], employees: [], projects: [], departments: [], positions: [], timesheets: [], onboardingDocs: [],
   notes: [], accommodationRequests: [], formTemplates: [], formSubmissions: [], signatureRequests: [],
   profiles: [], payrollRuns: [], currentCompanyId: null,
 };
@@ -78,11 +83,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const [companiesRes, clientsRes, employeesRes, projectsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, profilesRes, runsRes] = await Promise.all([
+      const [companiesRes, clientsRes, employeesRes, projectsRes, departmentsRes, positionsRes, timesheetsRes, docsRes, notesRes, accomRes, templatesRes, submissionsRes, sigReqRes, profilesRes, runsRes] = await Promise.all([
         supabase.from('companies').select('*').eq('id', profile.companyId),
         supabase.from('clients').select('*'),
         supabase.from('employees').select('*'),
         supabase.from('projects').select('*'),
+        supabase.from('departments').select('*'),
+        supabase.from('positions').select('*'),
         supabase.from('timesheets').select('*'),
         supabase.from('onboarding_documents').select('*'),
         supabase.from('notes').select('*'),
@@ -105,6 +112,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       warn('clients', clientsRes.error);
       warn('employees', employeesRes.error);
       warn('projects', projectsRes.error);
+      warn('departments', departmentsRes.error);
+      warn('positions', positionsRes.error);
       warn('timesheets', timesheetsRes.error);
       warn('onboarding_documents', docsRes.error);
       warn('notes', notesRes.error);
@@ -120,6 +129,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clients: (clientsRes.data ?? []).map(rowToClient),
         employees: (employeesRes.data ?? []).map(rowToEmployee),
         projects: (projectsRes.data ?? []).map(rowToProject),
+        departments: (departmentsRes.data ?? []).map(rowToDepartment),
+        positions: (positionsRes.data ?? []).map(rowToPosition),
         timesheets: (timesheetsRes.data ?? []).map(rowToTimesheet),
         onboardingDocs: (docsRes.data ?? []).map(rowToDoc),
         notes: (notesRes.data ?? []).map(rowToNote),
@@ -195,6 +206,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateProject: async (id, patch) => {
       setData(prev => ({ ...prev, projects: prev.projects.map(p => p.id === id ? { ...p, ...patch } : p) }));
       const { error } = await supabase.from('projects').update(projectToRow(patch)).eq('id', id);
+      if (error) { console.error(error); refresh(); }
+    },
+
+    addDepartment: async (d) => {
+      if (!profile) return null;
+      const { data: row, error } = await supabase.from('departments').insert(departmentToRow({ ...d, companyId: profile.companyId })).select().single();
+      if (error) { console.error(error); return null; }
+      const dept = rowToDepartment(row);
+      setData(prev => ({ ...prev, departments: [...prev.departments, dept] }));
+      return dept;
+    },
+    updateDepartment: async (id, patch) => {
+      setData(prev => ({ ...prev, departments: prev.departments.map(d => d.id === id ? { ...d, ...patch } : d) }));
+      const { error } = await supabase.from('departments').update(departmentToRow(patch)).eq('id', id);
+      if (error) { console.error(error); refresh(); }
+    },
+
+    addPosition: async (p) => {
+      if (!profile) return null;
+      const { data: row, error } = await supabase.from('positions').insert(positionToRow({ ...p, companyId: profile.companyId })).select().single();
+      if (error) { console.error(error); return null; }
+      const pos = rowToPosition(row);
+      setData(prev => ({ ...prev, positions: [...prev.positions, pos] }));
+      return pos;
+    },
+    updatePosition: async (id, patch) => {
+      setData(prev => ({ ...prev, positions: prev.positions.map(p => p.id === id ? { ...p, ...patch } : p) }));
+      const { error } = await supabase.from('positions').update(positionToRow(patch)).eq('id', id);
       if (error) { console.error(error); refresh(); }
     },
 

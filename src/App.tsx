@@ -10,6 +10,7 @@ import { ExportTimesheets } from './pages/ExportTimesheets';
 import { Employees } from './pages/Employees';
 import { EmployeeDetail } from './pages/EmployeeDetail';
 import { Clients } from './pages/Clients';
+import { Departments } from './pages/Departments';
 import { FormTemplates } from './pages/FormTemplates';
 import { Projects } from './pages/Projects';
 import { Payroll } from './pages/Payroll';
@@ -88,6 +89,7 @@ function GatedApp() {
           <Route path="/employees" element={<RoleOnly roles={['admin']}><Employees /></RoleOnly>} />
           <Route path="/employees/:id" element={<RoleOnly roles={['admin']}><EmployeeDetail /></RoleOnly>} />
           <Route path="/clients" element={<RoleOnly roles={['admin']}><Clients /></RoleOnly>} />
+          <Route path="/departments" element={<RoleOnly roles={['admin']}><Departments /></RoleOnly>} />
           <Route path="/forms" element={<RoleOnly roles={['admin']}><FormTemplates /></RoleOnly>} />
           <Route path="/projects" element={<RoleOnly roles={['admin']}><Projects /></RoleOnly>} />
           <Route path="/payroll" element={<RoleOnly roles={['admin']}><Payroll /></RoleOnly>} />

@@ -313,6 +313,14 @@ Vercel production as it does locally.
    copied link always points at production even if an admin is looking at
    a preview deployment.
 
+## Departments, Positions, and block pay
+
+**Departments** (admin only, under Departments in the nav) sit under an optional Client — e.g. "FCS Teaching Museum" under a client — and each Department holds a list of **Positions** (title + job code). On a timecard's review screen (upload) or detail page (while still in Draft), a day's work can be tied to a real Position via a dropdown instead of free text; picking one auto-fills job code/position/department and links it for payroll.
+
+A Position can optionally set a **flat block pay amount** (e.g. $120) with an informational block-hours size (e.g. 8). When a day is tied to such a position, payroll pays that flat amount for the day regardless of actual hours clocked — the employee's real clocked hours still show on the timecard for attendance, they just don't drive pay for that day. Everything else on a timecard keeps being paid at the employee's normal hourly rate, weekly overtime and all.
+
+**One-time setup**: run `supabase/migration_008_departments_positions.sql` in the Supabase SQL editor (additive — adds `departments` and `positions` tables only).
+
 ## Timesheets — admin control and PDF export
 
 Admins can now create a timesheet for **any employee, any week** (not

@@ -1,6 +1,6 @@
 import type {
   Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission, SignatureRequest, ProfileSummary,
+  FormTemplate, FormSubmission, SignatureRequest, ProfileSummary, Department, Position,
 } from './types';
 
 const numOrUndef = (v: any) => (v == null ? undefined : Number(v));
@@ -106,6 +106,37 @@ export function employeeToRow(e: Partial<Employee> & { companyId?: string }): an
   if (e.terminationDate !== undefined) row.termination_date = e.terminationDate;
   if (e.rates !== undefined) row.rates = e.rates;
   if (e.projectIds !== undefined) row.project_ids = e.projectIds;
+  return row;
+}
+
+export function rowToDepartment(r: any): Department {
+  return { id: r.id, companyId: r.company_id, clientId: r.client_id ?? null, name: r.name, active: r.active, createdAt: r.created_at };
+}
+export function departmentToRow(d: Partial<Department> & { companyId?: string }): any {
+  const row: any = {};
+  if (d.companyId !== undefined) row.company_id = d.companyId;
+  if (d.clientId !== undefined) row.client_id = d.clientId;
+  if (d.name !== undefined) row.name = d.name;
+  if (d.active !== undefined) row.active = d.active;
+  return row;
+}
+
+export function rowToPosition(r: any): Position {
+  return {
+    id: r.id, companyId: r.company_id, departmentId: r.department_id, title: r.title, jobCode: r.job_code ?? '',
+    blockPayAmount: numOrUndef(r.block_pay_amount), blockPayHours: numOrUndef(r.block_pay_hours),
+    active: r.active, createdAt: r.created_at,
+  };
+}
+export function positionToRow(p: Partial<Position> & { companyId?: string; departmentId?: string }): any {
+  const row: any = {};
+  if (p.companyId !== undefined) row.company_id = p.companyId;
+  if (p.departmentId !== undefined) row.department_id = p.departmentId;
+  if (p.title !== undefined) row.title = p.title;
+  if (p.jobCode !== undefined) row.job_code = p.jobCode;
+  if (p.blockPayAmount !== undefined) row.block_pay_amount = p.blockPayAmount;
+  if (p.blockPayHours !== undefined) row.block_pay_hours = p.blockPayHours;
+  if (p.active !== undefined) row.active = p.active;
   return row;
 }
 

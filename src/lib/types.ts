@@ -89,6 +89,29 @@ export interface Client {
   createdAt: string;
 }
 
+export interface Department {
+  id: string;
+  companyId: string;
+  clientId: string | null;
+  name: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface Position {
+  id: string;
+  companyId: string;
+  departmentId: string;
+  title: string;
+  jobCode: string;
+  /** Flat $ paid per block when set — payroll uses this instead of hours×rate for any day logged against this position. */
+  blockPayAmount?: number;
+  /** The block's nominal length (e.g. 8) — shown for reference; not used in pay math. */
+  blockPayHours?: number;
+  active: boolean;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   companyId: string;
@@ -135,6 +158,10 @@ export interface DailyEntry {
   jobCode?: string;
   positionTitle?: string;
   department?: string;
+  /** Set when this day's work is tied to a real Position record (rather
+   * than the free-text jobCode/positionTitle/department above) — lets
+   * payroll look up that position's block pay, if any. */
+  positionId?: string;
   hours: number;
 }
 
@@ -334,6 +361,8 @@ export interface AppData {
   clients: Client[];
   employees: Employee[];
   projects: Project[];
+  departments: Department[];
+  positions: Position[];
   timesheets: Timesheet[];
   onboardingDocs: OnboardingDocument[];
   notes: Note[];

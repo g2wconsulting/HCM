@@ -11,32 +11,91 @@ function elapsed(startedAt: string): string {
   return `${h}h ${m}m`;
 }
 
+function fmtClock(d: Date): string {
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+const BREAK_MINUTES = [15, 30, 45, 60];
+
 export function ClockWidget({ employee, timesheet }: { employee: Employee; timesheet: Timesheet | undefined }) {
   const { data, clockIn, clockOut } = useApp();
   const [projectId, setProjectId] = useState<string>(employee.projectIds[0] ?? '');
   const [, forceTick] = useState(0);
+  const [showBreakPicker, setShowBreakPicker] = useState(false);
+  // Purely local UI state — "on break" just means we clocked out and are
+  // showing a resume prompt; the actual break-length punch gap is simply
+  // whatever elapses between this clock-out and the next clock-in.
+  const [onBreakUntil, setOnBreakUntil] = useState<{ resumeProjectId: string; until: Date } | null>(null);
 
   const active = timesheet?.activeSession;
 
   useEffect(() => {
-    if (!active) return;
+    if (!active && !onBreakUntil) return;
     const interval = setInterval(() => forceTick(n => n + 1), 30000);
     return () => clearInterval(interval);
-  }, [active]);
+  }, [active, onBreakUntil]);
 
   if (employee.projectIds.length === 0) {
     return <p className="text-sm text-[var(--muted)]">Assign yourself to a project before clocking in.</p>;
   }
 
-  if (active) {
-    const project = data.projects.find(p => p.id === active.projectId);
+  function startBreak(minutes: number) {
+    if (!timesheet || !active) return;
+    const resumeProjectId = active.projectId ?? '';
+    clockOut(timesheet.id);
+    setOnBreakUntil({ resumeProjectId, until: new Date(Date.now() + minutes * 60000) });
+    setShowBreakPicker(false);
+  }
+
+  function resumeFromBreak() {
+    const resumeProjectId = onBreakUntil?.resumeProjectId ?? projectId;
+    setOnBreakUntil(null);
+    clockIn({ employeeId: employee.id, projectId: resumeProjectId || null });
+  }
+
+  if (onBreakUntil) {
+    const overdue = Date.now() > onBreakUntil.until.getTime();
     return (
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm font-medium">Clocked in — {project?.name ?? 'Unassigned'}</div>
-          <div className="text-xs text-[var(--muted)] tabular">{elapsed(active.startedAt)} elapsed</div>
+          <div className="text-sm font-medium">On break</div>
+          <div className={`text-xs tabular ${overdue ? 'text-[var(--pending)]' : 'text-[var(--muted)]'}`}>
+            {overdue ? 'Break time is up — ' : 'Back by '}{fmtClock(onBreakUntil.until)}
+          </div>
         </div>
-        <Button variant="danger" onClick={() => timesheet && clockOut(timesheet.id)}>Clock out</Button>
+        <Button onClick={resumeFromBreak}>I'm back — clock in</Button>
+      </div>
+    );
+  }
+
+  if (active) {
+    const project = data.projects.find(p => p.id === active.projectId);
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium">Clocked in — {project?.name ?? 'Unassigned'}</div>
+            <div className="text-xs text-[var(--muted)] tabular">{elapsed(active.startedAt)} elapsed</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setShowBreakPicker(v => !v)}>Take a break</Button>
+            <Button variant="danger" onClick={() => timesheet && clockOut(timesheet.id)}>Clock out</Button>
+          </div>
+        </div>
+        {showBreakPicker && (
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-xs text-[var(--muted)]">Break length:</span>
+            {BREAK_MINUTES.map(m => (
+              <button
+                key={m}
+                onClick={() => startBreak(m)}
+                className="focus-ring px-2.5 py-1 rounded-full text-xs font-medium border border-[var(--border)] text-[var(--ink-soft)] hover:bg-[var(--paper)]"
+              >
+                {m < 60 ? `${m} min` : '1 hour'}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }

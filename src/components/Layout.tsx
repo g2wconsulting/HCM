@@ -10,6 +10,7 @@ const ADMIN_NAV = [
   { to: '/timesheets', label: 'Timesheets', icon: ClockIcon },
   { to: '/clients', label: 'Clients', icon: BuildingIcon },
   { to: '/projects', label: 'Projects', icon: FolderIcon },
+  { to: '/departments', label: 'Departments', icon: FolderIcon },
   { to: '/forms', label: 'Forms', icon: FormIcon },
   { to: '/payroll', label: 'Payroll', icon: StampIcon },
   { to: '/settings', label: 'Settings', icon: GearIcon },

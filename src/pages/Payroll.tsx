@@ -13,7 +13,10 @@ export function Payroll() {
     return d.toISOString().slice(0, 10);
   });
 
-  const approvedTimesheets = data.timesheets.filter(t => t.status === 'approved');
+  // 'approved' is the legacy weekly-timesheet terminal state; 'completed'
+  // is the equivalent for an uploaded timecard once both the employee and
+  // supervisor have signed.
+  const approvedTimesheets = data.timesheets.filter(t => t.status === 'approved' || t.status === 'completed');
   const unpaidApproved = approvedTimesheets; // simplification: any approved & not yet in a run
 
   const eligibleEmployeeIds = useMemo(() => Array.from(new Set(unpaidApproved.map(t => t.employeeId))), [unpaidApproved]);
@@ -28,7 +31,7 @@ export function Payroll() {
       const employee = data.employees.find(e => e.id === empId)!;
       const empTimesheets = relevantTs.filter(t => t.employeeId === empId);
       const ytd = computeYtdGrossBeforeRun(empId, data.payrollRuns);
-      return computePayrollLineItem({ employee, company, timesheets: empTimesheets, ytdGrossBeforeThisPeriod: ytd });
+      return computePayrollLineItem({ employee, company, timesheets: empTimesheets, ytdGrossBeforeThisPeriod: ytd, positions: data.positions });
     });
 
     const created = await addPayrollRun({
