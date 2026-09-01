@@ -24,6 +24,8 @@ import { PortalTimesheetDetail } from './pages/PortalTimesheetDetail';
 import { ResetPassword } from './pages/ResetPassword';
 import { SignDocument } from './pages/SignDocument';
 import { SignLookup } from './pages/SignLookup';
+import { TimesheetUpload } from './pages/TimesheetUpload';
+import { TimecardSign } from './pages/TimecardSign';
 
 function Gate({ children }: { children: React.ReactNode }) {
   const { session, profile, loading, error, signOut } = useAuth();
@@ -62,6 +64,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/sign" element={<SignLookup />} />
           <Route path="/sign/:token" element={<SignDocument />} />
+          <Route path="/timecard/:token" element={<TimecardSign />} />
           <Route path="/*" element={<GatedApp />} />
         </Routes>
       </BrowserRouter>
@@ -77,6 +80,7 @@ function GatedApp() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/timesheets" element={<RoleOnly roles={['admin', 'employee']}><Timesheets /></RoleOnly>} />
           <Route path="/timesheets/export" element={<RoleOnly roles={['admin']}><ExportTimesheets /></RoleOnly>} />
+          <Route path="/timesheets/upload" element={<RoleOnly roles={['admin']}><TimesheetUpload /></RoleOnly>} />
           <Route path="/timesheets/:id" element={<RoleOnly roles={['admin', 'employee']}><TimesheetDetail /></RoleOnly>} />
           <Route path="/my-pay" element={<RoleOnly roles={['employee']}><MyPay /></RoleOnly>} />
           <Route path="/my-onboarding" element={<RoleOnly roles={['employee']}><MyOnboarding /></RoleOnly>} />

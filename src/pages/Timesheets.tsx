@@ -4,10 +4,19 @@ import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, EmptyState, inputClass } from '../components/ui';
 import { formatDate, hours as fmtHours, exportTimesheetCsv } from '../lib/format';
-import type { TimesheetStatus } from '../lib/types';
+import { buildTimecardPdf, timecardPdfFileName } from '../lib/pdfExport';
+import type { Timesheet, TimesheetStatus } from '../lib/types';
 
-const STATUS_TONE: Record<TimesheetStatus, 'good' | 'bad' | 'pending' | 'neutral'> = {
+export const STATUS_TONE: Record<TimesheetStatus, 'good' | 'bad' | 'pending' | 'neutral'> = {
   draft: 'neutral', submitted: 'pending', approved: 'good', rejected: 'bad', paid: 'neutral',
+  sent_to_employee: 'pending', employee_approved: 'pending', sent_to_supervisor: 'pending',
+  supervisor_approved: 'good', completed: 'good',
+};
+
+export const STATUS_LABEL: Record<TimesheetStatus, string> = {
+  draft: 'Draft', submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected', paid: 'Paid',
+  sent_to_employee: 'Sent to Employee', employee_approved: 'Employee Approved',
+  sent_to_supervisor: 'Sent to Supervisor', supervisor_approved: 'Supervisor Approved', completed: 'Completed',
 };
 
 const STATUS_FILTERS: { value: 'all' | TimesheetStatus; label: string }[] = [
@@ -128,6 +137,7 @@ export function Timesheets() {
           <p className="text-[var(--ink-soft)] mt-1">{visibleTimesheets.length} total · {visibleTimesheets.filter(t => t.status === 'submitted').length} pending review</p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && <Button variant="secondary" onClick={() => navigate('/timesheets/upload')}>Upload timesheet</Button>}
           {isAdmin && <Button variant="secondary" onClick={() => setShowExport(true)}>Export range to PDF</Button>}
           {isAdmin ? (
             <Button onClick={() => setShowNew(true)}>+ New timesheet</Button>
@@ -230,22 +240,27 @@ function TimesheetTable({ rows, showEmpty }: { rows: any[]; showEmpty: boolean }
       <tbody>
         {rows.map(ts => {
           const emp = data.employees.find(e => e.id === ts.employeeId);
-          const total = ts.entries.reduce((s: number, e: any) => s + e.hours, 0);
+          const isTimecard = (ts.dailyEntries?.length ?? 0) > 0;
+          const total = isTimecard ? (ts.regularHours ?? 0) : ts.entries.reduce((s: number, e: any) => s + e.hours, 0);
           return (
             <tr key={ts.id} className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--paper)]/60">
               <td className="px-5 py-3 font-medium">{emp?.firstName} {emp?.lastName}</td>
               <td className="px-5 py-3 text-[var(--ink-soft)]">{clientLabelFor(ts, data.projects, data.clients)}</td>
               <td className="px-5 py-3 text-[var(--ink-soft)]">{formatDate(ts.weekStartDate)} – {formatDate(ts.weekEndDate)}</td>
               <td className="px-5 py-3 text-right tabular">{fmtHours(total)}</td>
-              <td className="px-5 py-3"><Badge tone={STATUS_TONE[ts.status as TimesheetStatus]}>{ts.status}</Badge></td>
+              <td className="px-5 py-3"><Badge tone={STATUS_TONE[ts.status as TimesheetStatus]}>{STATUS_LABEL[ts.status as TimesheetStatus] ?? ts.status}</Badge></td>
               <td className="px-5 py-3 text-right">
-                <button
-                  onClick={() => emp && exportTimesheetCsv({ timesheet: ts, employeeName: `${emp.firstName} ${emp.lastName}`, employeeLastName: emp.lastName, projects: data.projects })}
-                  className="focus-ring text-[var(--ink-soft)] hover:text-[var(--ink)] text-sm font-medium"
-                  title="Export this timesheet as CSV"
-                >
-                  CSV
-                </button>
+                {isTimecard && isAdmin ? (
+                  <TimecardRowActions ts={ts} employee={emp} />
+                ) : (
+                  <button
+                    onClick={() => emp && exportTimesheetCsv({ timesheet: ts, employeeName: `${emp.firstName} ${emp.lastName}`, employeeLastName: emp.lastName, projects: data.projects })}
+                    className="focus-ring text-[var(--ink-soft)] hover:text-[var(--ink)] text-sm font-medium"
+                    title="Export this timesheet as CSV"
+                  >
+                    CSV
+                  </button>
+                )}
               </td>
               <td className="px-5 py-3 text-right">
                 <Link to={`/timesheets/${ts.id}`} className="focus-ring text-[var(--accent)] font-medium hover:underline">
@@ -266,6 +281,56 @@ function TimesheetTable({ rows, showEmpty }: { rows: any[]; showEmpty: boolean }
         )}
       </tbody>
     </table>
+  );
+}
+
+export function TimecardRowActions({ ts, employee }: { ts: Timesheet; employee?: { firstName: string; lastName: string; employeeNumber?: string } }) {
+  const { company, ensureTimecardToken, sendTimecardEmail } = useApp();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function doSend(role: 'employee' | 'supervisor') {
+    setBusy(true); setMsg(null);
+    const action = (role === 'employee' ? ts.employeeLinkToken : ts.supervisorLinkToken) ? 'resend' : 'send';
+    const result = await sendTimecardEmail(ts.id, role, action);
+    setMsg(result.success ? `${action === 'resend' ? 'Resent' : 'Sent'} to ${role}.` : (result.error ?? 'Failed to send.'));
+    setBusy(false);
+  }
+
+  async function copyLink(role: 'employee' | 'supervisor') {
+    setBusy(true); setMsg(null);
+    const token = await ensureTimecardToken(ts.id, role);
+    setBusy(false);
+    if (!token) { setMsg('Could not generate link.'); return; }
+    const base = (import.meta.env.VITE_SITE_URL as string | undefined) || window.location.origin;
+    const link = `${base}/timecard/${token}`;
+    try { await navigator.clipboard.writeText(link); setMsg('Link copied.'); } catch { setMsg(link); }
+  }
+
+  function exportPdf() {
+    if (!employee) return;
+    const doc = buildTimecardPdf({ company, employee: employee as any, timesheet: ts });
+    doc.save(timecardPdfFileName(employee, ts.weekStartDate, ts.weekEndDate));
+  }
+
+  return (
+    <details className="relative inline-block text-left" onToggle={() => setMsg(null)}>
+      <summary className="focus-ring list-none cursor-pointer text-[var(--ink-soft)] hover:text-[var(--ink)] text-sm font-medium select-none">Actions ▾</summary>
+      <div className="absolute right-0 mt-1 w-56 bg-white border border-[var(--border)] rounded-lg shadow-lg z-10 py-1 text-sm text-left">
+        <button disabled={busy} onClick={() => doSend('employee')} className="w-full text-left px-3 py-2 hover:bg-[var(--paper)] disabled:opacity-50">
+          {ts.employeeLinkToken ? 'Resend to employee' : 'Send to employee'}
+        </button>
+        <button disabled={busy} onClick={() => doSend('supervisor')} className="w-full text-left px-3 py-2 hover:bg-[var(--paper)] disabled:opacity-50">
+          {ts.supervisorLinkToken ? 'Resend to supervisor' : 'Send to supervisor'}
+        </button>
+        <div className="border-t border-[var(--border-soft)] my-1" />
+        <button disabled={busy} onClick={() => copyLink('employee')} className="w-full text-left px-3 py-2 hover:bg-[var(--paper)] disabled:opacity-50">Copy employee link</button>
+        <button disabled={busy} onClick={() => copyLink('supervisor')} className="w-full text-left px-3 py-2 hover:bg-[var(--paper)] disabled:opacity-50">Copy supervisor link</button>
+        <div className="border-t border-[var(--border-soft)] my-1" />
+        <button onClick={exportPdf} className="w-full text-left px-3 py-2 hover:bg-[var(--paper)]">Export PDF</button>
+        {msg && <div className="px-3 py-2 text-xs text-[var(--muted)] border-t border-[var(--border-soft)]">{msg}</div>}
+      </div>
+    </details>
   );
 }
 

@@ -75,6 +75,7 @@ export interface Employee {
   terminationDate?: string;
   rates: EmployeeRate[];
   projectIds: string[]; // projects the employee is assigned to
+  employeeNumber?: string; // human-readable ID (e.g. "824276"), used to match uploaded timecards
   createdAt: string;
 }
 
@@ -101,7 +102,11 @@ export interface Project {
   createdAt: string;
 }
 
-export type TimesheetStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid';
+export type TimesheetStatus =
+  | 'draft' | 'submitted' | 'approved' | 'rejected' | 'paid'
+  // Uploaded-timecard approval pipeline (see DailyEntry) — the legacy
+  // statuses above stay in play for the weekly hours-grid flow.
+  | 'sent_to_employee' | 'employee_approved' | 'sent_to_supervisor' | 'supervisor_approved' | 'completed';
 
 export interface TimeEntry {
   id: string;
@@ -111,12 +116,50 @@ export interface TimeEntry {
   notes?: string;
 }
 
+/** A single clock in/out pair within a day (e.g. before/after a lunch break). */
+export interface Punch {
+  in: string; // "HH:MM" 24-hour
+  out: string; // "HH:MM" 24-hour
+}
+
+export type DailyStatus = 'WORK' | 'OFF' | 'HOLIDAY' | 'PTO' | 'SICK';
+
+/** One day's row on the "Daily Time Entries" table of an uploaded timecard.
+ * Multiple punches on the same date (e.g. a lunch break) live together in
+ * `punches` under one DailyEntry — the date is never repeated per punch. */
+export interface DailyEntry {
+  date: string; // ISO date
+  dayOfWeek: string; // "Monday"
+  status: DailyStatus;
+  punches: Punch[];
+  jobCode?: string;
+  positionTitle?: string;
+  department?: string;
+  hours: number;
+}
+
+export interface JobCodeSummaryRow {
+  department: string;
+  jobCode: string;
+  positionTitle: string;
+  hours: number;
+  programs: number;
+  total: number;
+}
+
+export interface SendLogEntry {
+  type: 'employee' | 'supervisor';
+  action: 'sent' | 'resent';
+  at: string;
+  byProfileId?: string | null;
+}
+
 export interface Timesheet {
   id: string;
   companyId: string;
   employeeId: string;
-  weekStartDate: string; // ISO date, Monday
-  weekEndDate: string; // ISO date, Sunday
+  weekStartDate: string; // ISO date — for an uploaded timecard, the pay period start
+  weekEndDate: string; // ISO date — for an uploaded timecard, the pay period end
   entries: TimeEntry[];
   status: TimesheetStatus;
   submittedAt?: string;
@@ -130,6 +173,23 @@ export interface Timesheet {
   activeSession?: ActiveClockSession | null;
   clockSessions: ClockSession[];
   createdAt: string;
+
+  // Uploaded timecard fields — present (dailyEntries non-empty) only for
+  // timesheets created via the upload flow. A row with no daily entries
+  // renders as the classic weekly hours-grid, unchanged.
+  dailyEntries?: DailyEntry[];
+  regularHours?: number;
+  jobCodeSummary?: JobCodeSummaryRow[];
+  employeeNumberSnapshot?: string;
+  employeeNameSnapshot?: string;
+  supervisorName?: string;
+  supervisorEmail?: string;
+  sendLog?: SendLogEntry[];
+  employeeSignedAt?: string;
+  supervisorSignature?: SignatureRecord;
+  supervisorSignedAt?: string;
+  employeeLinkToken?: string;
+  supervisorLinkToken?: string;
 }
 
 export interface ClockSession {

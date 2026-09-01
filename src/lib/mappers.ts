@@ -3,6 +3,8 @@ import type {
   FormTemplate, FormSubmission, SignatureRequest, ProfileSummary,
 } from './types';
 
+const numOrUndef = (v: any) => (v == null ? undefined : Number(v));
+
 export function rowToClient(r: any): Client {
   return {
     id: r.id, companyId: r.company_id, name: r.name, contactName: r.contact_name ?? undefined,
@@ -80,11 +82,13 @@ export function rowToEmployee(r: any): Employee {
     federalAllowancesExtraWithholding: Number(r.federal_extra_withholding), salaryAnnual: r.salary_annual != null ? Number(r.salary_annual) : undefined,
     defaultHourlyRate: Number(r.default_hourly_rate), dependentsCredit: Number(r.dependents_credit),
     hireDate: r.hire_date, terminationDate: r.termination_date ?? undefined,
-    rates: r.rates ?? [], projectIds: r.project_ids ?? [], createdAt: r.created_at,
+    rates: r.rates ?? [], projectIds: r.project_ids ?? [], employeeNumber: r.employee_number ?? undefined,
+    createdAt: r.created_at,
   };
 }
 export function employeeToRow(e: Partial<Employee> & { companyId?: string }): any {
   const row: any = {};
+  if (e.employeeNumber !== undefined) row.employee_number = e.employeeNumber;
   if (e.companyId !== undefined) row.company_id = e.companyId;
   if (e.firstName !== undefined) row.first_name = e.firstName;
   if (e.lastName !== undefined) row.last_name = e.lastName;
@@ -136,10 +140,32 @@ export function rowToTimesheet(r: any): Timesheet {
     rejectionReason: r.rejection_reason ?? undefined, createdAt: r.created_at,
     clientApproval: r.client_approval ?? undefined, clientApprovedAt: r.client_approved_at ?? undefined,
     activeSession: r.active_session ?? null, clockSessions: r.clock_sessions ?? [],
+    dailyEntries: r.daily_entries ?? [], regularHours: numOrUndef(r.regular_hours),
+    jobCodeSummary: r.job_code_summary ?? [],
+    employeeNumberSnapshot: r.employee_number_snapshot ?? undefined,
+    employeeNameSnapshot: r.employee_name_snapshot ?? undefined,
+    supervisorName: r.supervisor_name ?? undefined, supervisorEmail: r.supervisor_email ?? undefined,
+    sendLog: r.send_log ?? [],
+    employeeSignedAt: r.employee_signed_at ?? undefined,
+    supervisorSignature: r.supervisor_signature ?? undefined, supervisorSignedAt: r.supervisor_signed_at ?? undefined,
+    employeeLinkToken: r.employee_link_token ?? undefined, supervisorLinkToken: r.supervisor_link_token ?? undefined,
   };
 }
 export function timesheetToRow(t: Partial<Timesheet> & { companyId?: string; employeeId?: string }): any {
   const row: any = {};
+  if (t.dailyEntries !== undefined) row.daily_entries = t.dailyEntries;
+  if (t.regularHours !== undefined) row.regular_hours = t.regularHours;
+  if (t.jobCodeSummary !== undefined) row.job_code_summary = t.jobCodeSummary;
+  if (t.employeeNumberSnapshot !== undefined) row.employee_number_snapshot = t.employeeNumberSnapshot;
+  if (t.employeeNameSnapshot !== undefined) row.employee_name_snapshot = t.employeeNameSnapshot;
+  if (t.supervisorName !== undefined) row.supervisor_name = t.supervisorName;
+  if (t.supervisorEmail !== undefined) row.supervisor_email = t.supervisorEmail;
+  if (t.sendLog !== undefined) row.send_log = t.sendLog;
+  if (t.employeeSignedAt !== undefined) row.employee_signed_at = t.employeeSignedAt;
+  if (t.supervisorSignature !== undefined) row.supervisor_signature = t.supervisorSignature;
+  if (t.supervisorSignedAt !== undefined) row.supervisor_signed_at = t.supervisorSignedAt;
+  if (t.employeeLinkToken !== undefined) row.employee_link_token = t.employeeLinkToken;
+  if (t.supervisorLinkToken !== undefined) row.supervisor_link_token = t.supervisorLinkToken;
   if (t.companyId !== undefined) row.company_id = t.companyId;
   if (t.employeeId !== undefined) row.employee_id = t.employeeId;
   if (t.weekStartDate !== undefined) row.week_start_date = t.weekStartDate;

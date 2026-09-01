@@ -22,6 +22,13 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')!;
 const RESEND_FROM = Deno.env.get('RESEND_FROM') ?? 'onboarding@resend.dev';
+// Canonical site URL, set once as a Supabase secret:
+//   supabase secrets set SITE_URL=https://your-production-domain
+// Fixes the "wrong link" bug: previously this function trusted whatever
+// origin the browser sent, so a send triggered from a preview deployment
+// or localhost would email a link to that ephemeral origin. When set,
+// SITE_URL always wins over the client-supplied siteUrl.
+const SITE_URL = Deno.env.get('SITE_URL');
 
 Deno.serve(async (req) => {
   const cors = {
@@ -39,8 +46,9 @@ Deno.serve(async (req) => {
       return json({ error: 'Missing Authorization header' }, 401, cors);
     }
 
-    const { requestId, siteUrl } = await req.json();
-    console.log('send-signature-request: payload', { requestId, siteUrl });
+    const { requestId, siteUrl: clientSiteUrl } = await req.json();
+    const siteUrl = SITE_URL || clientSiteUrl;
+    console.log('send-signature-request: payload', { requestId, siteUrl, usedSecret: !!SITE_URL });
     if (!requestId || !siteUrl) return json({ error: 'requestId and siteUrl are required' }, 400, cors);
 
     // Verify the caller is a logged-in admin, using their own JWT (not the

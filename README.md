@@ -265,6 +265,54 @@ e-signature" still work with zero setup — they just require you to send
 the email yourself rather than the system doing it, and won't
 automatically update anything when someone signs.
 
+## Uploading timesheets → individual employee timecards
+
+**Timesheets → Upload timesheet** (admin only) parses an Excel/CSV/PDF
+time report into one draft timecard per employee — daily entries, multiple
+clock in/out punches per day (e.g. around a lunch break), job code,
+position, and department — and lands you on a review screen to correct
+anything before saving. Uploading the same employee/pay-period combination
+twice never creates a duplicate: you're warned and can choose to replace
+the existing timecard instead.
+
+Each saved timecard gets its own **Actions** menu (on the Timesheets list
+and on the timecard itself): Send to employee, Send to supervisor, Resend,
+Copy link, and Export PDF. The employee and supervisor each get a
+*different* secure link (`/timecard/:token`) tied to that one timecard's
+own unique token column — a link can never open another employee's
+timecard, and clicking it twice (or reloading after signing) is a no-op,
+not a double-submit. Status moves through **Draft → Sent to Employee →
+Employee Approved → Sent to Supervisor → Supervisor Approved/Completed**,
+shown on the Timesheets list and the timecard itself.
+
+The exported PDF matches the G2W Consulting timecard format and downloads
+as `FirstName LastName Timesheet MM.DD.YY-MM.DD.YY.pdf`. Like the range
+export above, it's built entirely client-side, so it works the same on
+Vercel production as it does locally.
+
+### One-time setup
+
+1. **Run the migration**: `supabase/migration_007_timecards.sql` in the
+   Supabase SQL editor (adds `employees.employee_number` and the new
+   timecard columns/functions on `timesheets` — additive only, nothing
+   existing changes).
+2. **Set the canonical site URL** (this is also the fix for the older
+   "wrong link" bug on the e-signature feature above — the email
+   functions now always use this instead of trusting the caller's origin):
+   ```bash
+   supabase secrets set SITE_URL=https://hcm-beige.vercel.app
+   ```
+3. **Deploy the new function** (uses the same `RESEND_API_KEY`/`RESEND_FROM`
+   secrets as `send-signature-request`):
+   ```bash
+   supabase functions deploy send-timecard-email
+   supabase functions deploy send-signature-request
+   ```
+4. Optionally set `VITE_SITE_URL` in your `.env`/Vercel project settings
+   to the same production URL — this is only used by "Copy Link" so the
+   copied link always points at production even if an admin is looking at
+   a preview deployment.
+
 ## Timesheets — admin control and PDF export
 
 Admins can now create a timesheet for **any employee, any week** (not

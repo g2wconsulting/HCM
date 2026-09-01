@@ -3,12 +3,15 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { useAuth } from '../lib/AuthContext';
 import { Badge, Button, Card, SectionLabel, inputClass } from '../components/ui';
-import { formatDate, formatDateShort, hours as fmtHours, downloadCsv } from '../lib/format';
+import { formatDate, formatDateShort, hours as fmtHours, downloadCsv, initials } from '../lib/format';
 import { SignaturePad, SignaturePreview } from '../components/SignaturePad';
 import { ClockWidget } from '../components/ClockWidget';
 import { supabase } from '../lib/supabaseClient';
 import { uid } from '../lib/db';
-import type { TimeEntry } from '../lib/types';
+import { buildTimecardPdf, timecardPdfFileName } from '../lib/pdfExport';
+import { formatTimeLabel } from '../lib/timesheetParser';
+import { STATUS_TONE, STATUS_LABEL, TimecardRowActions } from './Timesheets';
+import type { TimeEntry, Timesheet, Employee } from '../lib/types';
 
 function daysOfWeek(weekStart: string): string[] {
   const start = new Date(weekStart + 'T00:00:00');
@@ -41,6 +44,10 @@ export function TimesheetDetail() {
         <Link to="/timesheets" className="text-[var(--accent)] underline">Back to timesheets</Link>
       </div>
     );
+  }
+
+  if ((ts.dailyEntries?.length ?? 0) > 0) {
+    return <TimecardDetailView ts={ts} employee={employee} isAdmin={isAdmin} />;
   }
 
   const entriesByDayProject = new Map<string, TimeEntry>();
@@ -430,4 +437,170 @@ function SendForApprovalCard({
 function StatusBadge({ status }: { status: string }) {
   const tone = status === 'approved' || status === 'paid' ? 'good' : status === 'rejected' ? 'bad' : status === 'submitted' ? 'pending' : 'neutral';
   return <Badge tone={tone as any}>{status}</Badge>;
+}
+
+// Uploaded-timecard view — the G2W Consulting layout from the sample:
+// header, employee block, regular hours, Daily Time Entries (same-day
+// punches share one row with a dotted separator, date shown once),
+// Job Code & Allocation Summary, and Employee Verification / Supervisor
+// Approval blocks with signature + timestamp once signed.
+function TimecardDetailView({ ts, employee, isAdmin }: { ts: Timesheet; employee: Employee; isAdmin: boolean }) {
+  const { company, updateTimesheet } = useApp();
+  const [supervisorName, setSupervisorName] = useState(ts.supervisorName ?? '');
+  const [supervisorEmail, setSupervisorEmail] = useState(ts.supervisorEmail ?? '');
+  const [savingSupervisor, setSavingSupervisor] = useState(false);
+
+  const entries = (ts.dailyEntries ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
+
+  function exportPdf() {
+    const doc = buildTimecardPdf({ company, employee, timesheet: ts });
+    doc.save(timecardPdfFileName(employee, ts.weekStartDate, ts.weekEndDate));
+  }
+
+  async function saveSupervisor() {
+    setSavingSupervisor(true);
+    await updateTimesheet(ts.id, { supervisorName: supervisorName.trim() || undefined, supervisorEmail: supervisorEmail.trim() || undefined });
+    setSavingSupervisor(false);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <Link to="/timesheets" className="text-sm text-[var(--muted)] hover:text-[var(--ink)]">← Timesheets</Link>
+          <h1 className="font-display text-3xl mt-1">{employee.firstName} {employee.lastName}</h1>
+          <p className="text-[var(--ink-soft)] mt-1">Pay period {formatDate(ts.weekStartDate)} – {formatDate(ts.weekEndDate)}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge tone={STATUS_TONE[ts.status]}>{STATUS_LABEL[ts.status] ?? ts.status}</Badge>
+          {isAdmin && <TimecardRowActions ts={ts} employee={employee} />}
+          <Button variant="secondary" onClick={exportPdf}>Export PDF</Button>
+        </div>
+      </div>
+
+      <Card>
+        <div className="flex items-start gap-4 flex-wrap">
+          <div className="w-11 h-11 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-display text-sm shrink-0">
+            {initials(employee.firstName, employee.lastName)}
+          </div>
+          <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-[var(--muted)]">Employee ID</div>
+              <div className="font-medium mt-0.5">{ts.employeeNumberSnapshot || employee.employeeNumber || '—'}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-[var(--muted)]">Pay period</div>
+              <div className="font-medium mt-0.5">{formatDate(ts.weekStartDate)} – {formatDate(ts.weekEndDate)}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-[var(--muted)]">Regular hours</div>
+              <div className="font-display text-xl tabular text-[var(--accent-dark)]">{fmtHours(ts.regularHours ?? 0)}</div>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="!p-0 overflow-x-auto">
+        <div className="px-5 pt-4"><SectionLabel>Daily time entries</SectionLabel></div>
+        <table className="w-full text-sm min-w-[720px]">
+          <thead>
+            <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-[var(--muted)]">
+              <th className="px-4 py-2.5 text-left font-semibold">Date &amp; day</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Status</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Time in / out</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Job code &amp; position</th>
+              <th className="px-4 py-2.5 text-right font-semibold">Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(d => (
+              <tr key={d.date} className="border-b border-[var(--border-soft)] last:border-0 align-top">
+                <td className="px-4 py-2.5 whitespace-nowrap">{d.dayOfWeek}<br /><span className="text-xs text-[var(--muted)]">{formatDate(d.date)}</span></td>
+                <td className="px-3 py-2.5">{d.status}</td>
+                <td className="px-3 py-2.5">
+                  {d.punches.length === 0 ? <span className="text-[var(--muted)]">—</span> : d.punches.map((p, i) => (
+                    <div key={i}>
+                      {i > 0 && <div className="border-t border-dashed border-[var(--border)] my-1 w-28" />}
+                      {formatTimeLabel(p.in)} – {formatTimeLabel(p.out)}
+                    </div>
+                  ))}
+                </td>
+                <td className="px-3 py-2.5">{d.status === 'WORK' ? [d.jobCode, d.positionTitle].filter(Boolean).join(' · ') || '—' : '—'}</td>
+                <td className="px-4 py-2.5 text-right tabular">{fmtHours(d.hours)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      {(ts.jobCodeSummary?.length ?? 0) > 0 && (
+        <Card className="!p-0 overflow-x-auto">
+          <div className="px-5 pt-4"><SectionLabel>Job code &amp; allocation summary</SectionLabel></div>
+          <table className="w-full text-sm min-w-[600px]">
+            <thead>
+              <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wide text-[var(--muted)]">
+                <th className="px-4 py-2.5 text-left font-semibold">Department / project</th>
+                <th className="px-3 py-2.5 text-left font-semibold">Job code</th>
+                <th className="px-3 py-2.5 text-left font-semibold">Position title</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Hours</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Programs</th>
+                <th className="px-4 py-2.5 text-right font-semibold">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ts.jobCodeSummary!.map((r, i) => (
+                <tr key={i} className="border-b border-[var(--border-soft)] last:border-0">
+                  <td className="px-4 py-2.5">{r.department}</td>
+                  <td className="px-3 py-2.5">{r.jobCode}</td>
+                  <td className="px-3 py-2.5">{r.positionTitle}</td>
+                  <td className="px-3 py-2.5 text-right tabular">{fmtHours(r.hours)}</td>
+                  <td className="px-3 py-2.5 text-right tabular">{fmtHours(r.programs)}</td>
+                  <td className="px-4 py-2.5 text-right tabular font-medium">{fmtHours(r.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <SectionLabel>Supervisor</SectionLabel>
+          <p className="text-xs text-[var(--muted)] mb-3">Set who this timecard's "Send to supervisor" link goes to.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-[var(--muted)]">Name</label>
+              <input value={supervisorName} onChange={e => setSupervisorName(e.target.value)} className={inputClass} placeholder="Supervisor name" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-[var(--muted)]">Email</label>
+              <input type="email" value={supervisorEmail} onChange={e => setSupervisorEmail(e.target.value)} className={inputClass} placeholder="supervisor@company.com" />
+            </div>
+            <Button variant="secondary" onClick={saveSupervisor} disabled={savingSupervisor}>{savingSupervisor ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card>
+          <SectionLabel>Employee verification</SectionLabel>
+          <p className="text-xs text-[var(--muted)] mb-2">I certify that the hours logged above accurately represent the hours worked during this pay period.</p>
+          {ts.employeeSignature ? (
+            <SignaturePreview sig={ts.employeeSignature} />
+          ) : (
+            <span className="text-sm text-[var(--muted)]">Not yet signed — send the employee their link to sign.</span>
+          )}
+        </Card>
+        <Card>
+          <SectionLabel>Supervisor approval</SectionLabel>
+          <p className="text-xs text-[var(--muted)] mb-2">I verify that the hours reported above are correct and approved for processing and billing.</p>
+          {ts.supervisorSignature ? (
+            <SignaturePreview sig={ts.supervisorSignature} />
+          ) : (
+            <span className="text-sm text-[var(--muted)]">Not yet approved{ts.status === 'employee_approved' || ts.status === 'draft' ? ' — send the supervisor their link once the employee has signed.' : '.'}</span>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
 }

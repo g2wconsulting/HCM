@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
 import type {
   AppData, Company, Employee, Project, Timesheet, OnboardingDocument, PayrollRun, Client, Note, AccommodationRequest,
-  FormTemplate, FormSubmission, SignatureRequest,
+  FormTemplate, FormSubmission, SignatureRequest, DailyEntry, JobCodeSummaryRow,
 } from './types';
 import {
   rowToCompany, companyToRow, rowToEmployee, employeeToRow, rowToProject, projectToRow,
@@ -43,6 +43,20 @@ interface AppContextValue {
   inviteUser: (params: { type: 'employee' | 'client'; targetId: string; email: string }) => Promise<{ success: boolean; error?: string }>;
   addPayrollRun: (r: Omit<PayrollRun, 'id' | 'createdAt'>) => Promise<PayrollRun | null>;
   updatePayrollRun: (id: string, patch: Partial<PayrollRun>) => Promise<void>;
+
+  importTimecards: (drafts: {
+    employeeId: string;
+    weekStartDate: string;
+    weekEndDate: string;
+    dailyEntries: DailyEntry[];
+    regularHours: number;
+    jobCodeSummary: JobCodeSummaryRow[];
+    employeeNumberSnapshot?: string;
+    employeeNameSnapshot?: string;
+    replaceExistingId?: string | null;
+  }[]) => Promise<{ createdCount: number; updatedCount: number; errors: string[] }>;
+  ensureTimecardToken: (timesheetId: string, role: 'employee' | 'supervisor') => Promise<string | null>;
+  sendTimecardEmail: (timesheetId: string, role: 'employee' | 'supervisor', action: 'send' | 'resend') => Promise<{ success: boolean; error?: string }>;
 }
 
 const emptyData: AppData = {
@@ -374,6 +388,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setData(prev => ({ ...prev, payrollRuns: prev.payrollRuns.map(r => r.id === id ? { ...r, ...patch } : r) }));
       const { error } = await supabase.from('payroll_runs').update(payrollRunToRow(patch)).eq('id', id);
       if (error) { console.error(error); refresh(); }
+    },
+
+    importTimecards: async (drafts) => {
+      if (!profile) return { createdCount: 0, updatedCount: 0, errors: ['Not signed in'] };
+      let createdCount = 0, updatedCount = 0;
+      const errors: string[] = [];
+      for (const d of drafts) {
+        if (d.replaceExistingId) {
+          const { error } = await supabase.from('timesheets').update(timesheetToRow({
+            dailyEntries: d.dailyEntries, regularHours: d.regularHours, jobCodeSummary: d.jobCodeSummary,
+            employeeNumberSnapshot: d.employeeNumberSnapshot, employeeNameSnapshot: d.employeeNameSnapshot,
+            status: 'draft', employeeSignature: undefined, supervisorSignature: undefined,
+            employeeSignedAt: undefined, supervisorSignedAt: undefined,
+            employeeLinkToken: undefined, supervisorLinkToken: undefined,
+          } as any)).eq('id', d.replaceExistingId);
+          if (error) errors.push(`${d.employeeNameSnapshot ?? 'Employee'}: ${error.message}`);
+          else updatedCount++;
+        } else {
+          const { error } = await supabase.from('timesheets').insert(timesheetToRow({
+            companyId: profile.companyId, employeeId: d.employeeId,
+            weekStartDate: d.weekStartDate, weekEndDate: d.weekEndDate,
+            entries: [], status: 'draft',
+            dailyEntries: d.dailyEntries, regularHours: d.regularHours, jobCodeSummary: d.jobCodeSummary,
+            employeeNumberSnapshot: d.employeeNumberSnapshot, employeeNameSnapshot: d.employeeNameSnapshot,
+          } as any));
+          if (error) errors.push(`${d.employeeNameSnapshot ?? 'Employee'}: ${error.message}`);
+          else createdCount++;
+        }
+      }
+      await refresh();
+      return { createdCount, updatedCount, errors };
+    },
+
+    ensureTimecardToken: async (timesheetId, role) => {
+      const existing = data.timesheets.find(t => t.id === timesheetId);
+      const current = role === 'employee' ? existing?.employeeLinkToken : existing?.supervisorLinkToken;
+      if (current) return current;
+      const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+      const column = role === 'employee' ? 'employee_link_token' : 'supervisor_link_token';
+      const { error } = await supabase.from('timesheets').update({ [column]: token }).eq('id', timesheetId);
+      if (error) { console.error(error); return null; }
+      setData(prev => ({
+        ...prev,
+        timesheets: prev.timesheets.map(t => t.id === timesheetId
+          ? { ...t, ...(role === 'employee' ? { employeeLinkToken: token } : { supervisorLinkToken: token }) }
+          : t),
+      }));
+      return token;
+    },
+
+    sendTimecardEmail: async (timesheetId, role, action) => {
+      try {
+        const { data: res, error } = await supabase.functions.invoke('send-timecard-email', {
+          body: { timesheetId, role, action },
+        });
+        if (error) return { success: false, error: error.message };
+        if ((res as any)?.error) return { success: false, error: (res as any).error };
+        await refresh();
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err?.message ?? 'Unknown error' };
+      }
     },
   }), [data, loading, loadError, profile, refresh]);
 
