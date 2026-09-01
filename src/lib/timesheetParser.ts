@@ -168,6 +168,27 @@ interface RawRow {
   jobCode?: string;
   positionTitle?: string;
   department?: string;
+  status?: DailyStatus;
+}
+
+/** Rebuilds a timecard's daily entries against a new pay-period range,
+ * keeping whatever work data already exists for dates inside both the old
+ * and new range and filling any newly-added dates as OFF. Used when an
+ * admin corrects the pay period on the review screen or timecard detail
+ * page — the report a punch export covers rarely lines up exactly with a
+ * company's actual pay-period boundaries. */
+export function reflowDailyEntries(dailyEntries: DailyEntry[], newStart: string, newEnd: string): DailyEntry[] {
+  const byDate = new Map(dailyEntries.map(d => [d.date, d]));
+  const result: DailyEntry[] = [];
+  const cursor = new Date(newStart + 'T00:00:00');
+  const last = new Date(newEnd + 'T00:00:00');
+  if (isNaN(cursor.getTime()) || isNaN(last.getTime()) || cursor > last) return dailyEntries;
+  while (cursor <= last) {
+    const iso = cursor.toISOString().slice(0, 10);
+    result.push(byDate.get(iso) ?? { date: iso, dayOfWeek: dayOfWeekOf(iso), status: 'OFF', punches: [], hours: 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
 }
 
 function buildDrafts(rows: RawRow[]): ParsedTimecardDraft[] {
@@ -209,11 +230,12 @@ function buildDrafts(rows: RawRow[]): ParsedTimecardDraft[] {
         }
         const explicit = dayRows.find(r => r.explicitHours != null)?.explicitHours ?? null;
         const computed = punches.reduce((s, p) => s + punchHours(p), 0);
-        const hours = explicit != null && explicit > 0 ? explicit : Math.round(computed * 100) / 100;
+        const hours = Math.round((explicit != null && explicit > 0 ? explicit : computed) * 100) / 100;
+        const status = dayRows.find(r => r.status)?.status ?? (hours > 0 || punches.length > 0 ? 'WORK' : 'OFF');
         dailyEntries.push({
           date: iso,
           dayOfWeek: dayOfWeekOf(iso),
-          status: hours > 0 || punches.length > 0 ? 'WORK' : 'OFF',
+          status,
           punches,
           jobCode: dayRows.find(r => r.jobCode)?.jobCode,
           positionTitle: dayRows.find(r => r.positionTitle)?.positionTitle,
@@ -296,10 +318,15 @@ export async function parseSpreadsheet(file: File): Promise<ParseResult> {
 }
 
 // ---------------------------------------------------------------------------
-// PDF — best effort only. PDF text extraction has no reliable column
-// structure, so this looks for date + time-range patterns line by line and
-// tracks the most recent "employee header" line it saw. Always review the
-// result before saving; this is why the review screen exists.
+// PDF — best effort. Tuned against a real "Employee Timecards" time-clock
+// export (one employee per page: "Employee Number / Name" header, then a
+// row per work day — date, day, action, start, stop, optional job code,
+// hours — followed by a "<Department> Summary" section listing job
+// codes/position titles worked). Other report layouts will parse less
+// completely, which is why every result still lands on the review screen:
+// whatever we can't confidently extract (most often job code/position for
+// days with no code in the source) is simply left blank for the admin to
+// fill in, per "if the info is available, fill it; if not, skip it."
 // ---------------------------------------------------------------------------
 export async function parsePdf(file: File): Promise<ParseResult> {
   const pdfjs = await import('pdfjs-dist');
@@ -308,57 +335,138 @@ export async function parsePdf(file: File): Promise<ParseResult> {
 
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;
+
+  // pdf.js returns text items in content-stream order, which for a
+  // table-based PDF is often NOT left-to-right visual order (columns can
+  // come out reversed or interleaved) — so each visual line is buffered
+  // and sorted by x-position before being joined, with a space inserted
+  // wherever there's a real gap between one item's end and the next's
+  // start (adjacent cells otherwise run together with no separator at all).
+  function buildLine(items: { str: string; x: number; width: number }[]): string {
+    items.sort((a, b) => a.x - b.x);
+    let out = '';
+    let lastEnd: number | null = null;
+    for (const it of items) {
+      if (lastEnd !== null && it.x - lastEnd > 2) out += ' ';
+      out += it.str;
+      lastEnd = it.x + it.width;
+    }
+    return out;
+  }
+
   const lines: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const content = await page.getTextContent();
     let lastY: number | null = null;
-    let current = '';
+    let currentItems: { str: string; x: number; width: number }[] = [];
     for (const item of content.items as any[]) {
       const y = item.transform[5];
-      if (lastY !== null && Math.abs(y - lastY) > 2) { lines.push(current); current = ''; }
-      current += item.str;
+      const x = item.transform[4];
+      if (lastY !== null && Math.abs(y - lastY) > 2) { lines.push(buildLine(currentItems)); currentItems = []; }
+      currentItems.push({ str: item.str, x, width: item.width ?? item.str.length * 5 });
       lastY = y;
     }
-    if (current) lines.push(current);
+    if (currentItems.length) lines.push(buildLine(currentItems));
   }
 
-  const headerRe = /employee[:\s]+([A-Za-z .'-]+?)\s*(?:\(|#|ID[:\s])\s*([A-Za-z0-9-]+)\)?/i;
-  const dateRe = /(\d{1,2}\/\d{1,2}\/\d{2,4})/;
-  const timeRangeRe = /(\d{1,2}:\d{2}\s*(?:AM|PM))\s*[-–—]\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i;
-  const jobCodeRe = /\b([A-Z]{3,}[A-Z0-9]*)\b/;
+  // "824276   Hopkins, Ella" — employee number, then "Last, First".
+  const employeeLineRe = /^(\d{3,})\s+([A-Za-z'.\- ]+?),\s*([A-Za-z'.\- ]+)$/;
+  // "08/28/2026 Fri Work 8:00 AM 10:00 AM MUSEUMINST 2.00 ..." — job code
+  // is optional (only present when the source has one assigned); the
+  // first number after start/stop (and any job code) is always Hours.
+  const punchRe = /^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+[A-Za-z]{3}\s+([A-Za-z]+)\s+(\d{1,2}:\d{2}\s*[AP]M)\s+(\d{1,2}:\d{2}\s*[AP]M)\s+(?:([A-Z][A-Z0-9]{2,})\s+)?([\d.]+)/;
+  // "Museum Instructor MUSEUMINST 36.50" or "Unassigned 2.00" — a
+  // department's job-code/position breakdown table. Not end-anchored:
+  // this report renders two side-by-side tables at the same height, which
+  // pdf.js's Y-grouping merges onto one text line, so anything after the
+  // first number captured here (e.g. a merged Pay Type Summary row) is
+  // deliberately ignored rather than guessed at.
+  const posLineRe = /^(.+?)\s+(?:([A-Z][A-Z0-9]{2,})\s+)?([\d.]+)/;
 
-  let currentEmployee: { first: string; last: string } | null = null;
   const raw: RawRow[] = [];
   const fileWarnings: string[] = [];
 
-  for (const line of lines) {
-    const h = line.match(headerRe);
-    if (h) {
-      const parts = h[1].trim().split(/\s+/);
-      currentEmployee = { first: parts[0] ?? '', last: parts.slice(1).join(' ') };
-      continue;
+  let currentEmployee: { number: string; first: string; last: string } | null = null;
+  let employeeRows: RawRow[] = [];
+  let currentDepartment: string | null = null;
+  let jobCodeToPosition = new Map<string, string>();
+  let capturingDeptTable = false;
+
+  function flushEmployee() {
+    if (!currentEmployee) return;
+    for (const r of employeeRows) {
+      r.employeeNumber = currentEmployee.number;
+      r.firstName = currentEmployee.first;
+      r.lastName = currentEmployee.last;
+      if (currentDepartment) r.department = currentDepartment;
+      if (r.jobCode && jobCodeToPosition.has(r.jobCode)) r.positionTitle = jobCodeToPosition.get(r.jobCode);
     }
-    const dateMatch = line.match(dateRe);
-    if (!dateMatch) continue;
-    const date = parseDateValue(dateMatch[1]);
-    if (!date) continue;
-    const timeMatch = line.match(timeRangeRe);
-    const jobMatch = line.match(jobCodeRe);
-    raw.push({
-      firstName: currentEmployee?.first,
-      lastName: currentEmployee?.last,
-      date,
-      timeIn: timeMatch ? parseTimeValue(timeMatch[1]) : null,
-      timeOut: timeMatch ? parseTimeValue(timeMatch[2]) : null,
-      jobCode: jobMatch ? jobMatch[1] : undefined,
-    });
+    raw.push(...employeeRows);
   }
 
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const empMatch = line.match(employeeLineRe);
+    if (empMatch) {
+      flushEmployee();
+      currentEmployee = { number: empMatch[1], last: empMatch[2].trim(), first: empMatch[3].trim() };
+      employeeRows = [];
+      currentDepartment = null;
+      jobCodeToPosition = new Map();
+      capturingDeptTable = false;
+      continue;
+    }
+
+    // A department heading and the "Pay Type Summary"/"Shift Summary"
+    // headings can render on the same text line (side-by-side report
+    // "cards" at the same height) — take the text before the first
+    // " Summary" as the department name, but Pay Type/Shift themselves
+    // are section labels, not department names, and — unlike a genuine
+    // new department — must NOT close the capture window: on this report
+    // shape their heading line comes *before* the actual job-code/position
+    // data line, so treating them as a stop condition would drop it.
+    const summaryIdx = line.indexOf(' Summary');
+    if (summaryIdx > 0 && !/^Total\b/i.test(line)) {
+      const label = line.slice(0, summaryIdx).trim();
+      if (label !== 'Shift' && label !== 'Pay Type') { currentDepartment = label; capturingDeptTable = true; }
+      continue;
+    }
+
+    if (capturingDeptTable) {
+      const posMatch = line.match(posLineRe);
+      if (posMatch) {
+        const jobCode = posMatch[2];
+        if (jobCode) jobCodeToPosition.set(jobCode, posMatch[1].trim());
+        continue;
+      }
+    }
+
+    const punchMatch = line.match(punchRe);
+    if (punchMatch && currentEmployee) {
+      const [, dateRaw, action, startRaw, stopRaw, jobCode, hoursRaw] = punchMatch;
+      const date = parseDateValue(dateRaw);
+      if (!date) continue;
+      const a = action.toLowerCase();
+      const status: DailyStatus = a.includes('holiday') ? 'HOLIDAY' : a.includes('pto') || a.includes('vacation') ? 'PTO' : a.includes('sick') ? 'SICK' : 'WORK';
+      employeeRows.push({
+        date,
+        timeIn: parseTimeValue(startRaw),
+        timeOut: parseTimeValue(stopRaw),
+        explicitHours: parseFloat(hoursRaw) || null,
+        jobCode: jobCode || undefined,
+        status,
+      });
+    }
+  }
+  flushEmployee();
+
   if (raw.length === 0) {
-    fileWarnings.push('Could not find any recognizable date/time rows in this PDF. PDF layouts vary a lot between time-clock systems — an Excel or CSV export from the same system will parse far more reliably.');
+    fileWarnings.push('Could not find any recognizable employee/date/time rows in this PDF. PDF layouts vary a lot between time-clock systems — an Excel or CSV export from the same system will parse far more reliably.');
   } else {
-    fileWarnings.push('PDF parsing is best-effort — double-check every row on the next screen before saving, especially job codes and position titles, which are harder to extract reliably from a PDF than a spreadsheet.');
+    fileWarnings.push('PDF parsing is best-effort — double-check every row on the next screen before saving. Job code, position, and department are filled in only where the source report had them; anything missing there is left blank for you to fill in.');
   }
 
   return { drafts: buildDrafts(raw), warnings: fileWarnings };

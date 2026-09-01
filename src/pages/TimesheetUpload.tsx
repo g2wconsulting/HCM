@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
 import { Badge, Button, Card, SectionLabel } from '../components/ui';
 import { formatDate, hours as fmtHours } from '../lib/format';
-import { parseTimesheetFile, buildJobCodeSummary, type ParsedTimecardDraft } from '../lib/timesheetParser';
+import { parseTimesheetFile, buildJobCodeSummary, reflowDailyEntries, type ParsedTimecardDraft } from '../lib/timesheetParser';
 import type { DailyEntry, DailyStatus } from '../lib/types';
 
 interface ReviewRow extends ParsedTimecardDraft {
@@ -47,7 +47,14 @@ export function TimesheetUpload() {
   }
 
   function updateRow(key: string, patch: Partial<ReviewRow>) {
-    setRows(prev => prev.map(r => r.key === key ? { ...r, ...patch } : r));
+    setRows(prev => prev.map(r => {
+      if (r.key !== key) return r;
+      const next = { ...r, ...patch };
+      const dup = next.matchedEmployeeId
+        ? data.timesheets.find(t => t.employeeId === next.matchedEmployeeId && t.weekStartDate === next.payPeriodStart) ?? null
+        : null;
+      return { ...next, duplicateOfId: dup?.id ?? null, replaceExisting: dup ? next.replaceExisting : false };
+    }));
   }
   function updateDay(key: string, date: string, patch: Partial<DailyEntry>) {
     setRows(prev => prev.map(r => {
@@ -55,6 +62,18 @@ export function TimesheetUpload() {
       const dailyEntries = r.dailyEntries.map(d => d.date === date ? { ...d, ...patch } : d);
       const regularHours = Math.round(dailyEntries.reduce((s, d) => s + d.hours, 0) * 100) / 100;
       return { ...r, dailyEntries, regularHours };
+    }));
+  }
+  function updatePayPeriod(key: string, field: 'payPeriodStart' | 'payPeriodEnd', value: string) {
+    setRows(prev => prev.map(r => {
+      if (r.key !== key) return r;
+      const next = { ...r, [field]: value };
+      const dailyEntries = reflowDailyEntries(r.dailyEntries, next.payPeriodStart, next.payPeriodEnd);
+      const regularHours = Math.round(dailyEntries.reduce((s, d) => s + d.hours, 0) * 100) / 100;
+      const dup = next.matchedEmployeeId
+        ? data.timesheets.find(t => t.employeeId === next.matchedEmployeeId && t.weekStartDate === next.payPeriodStart) ?? null
+        : null;
+      return { ...next, dailyEntries, regularHours, duplicateOfId: dup?.id ?? null, replaceExisting: dup ? next.replaceExisting : false };
     }));
   }
 
@@ -143,7 +162,13 @@ export function TimesheetUpload() {
             <Button variant="ghost" onClick={() => { setStep('upload'); setRows([]); }}>Start over</Button>
           </div>
           {rows.map(row => (
-            <ReviewCard key={row.key} row={row} onUpdate={p => updateRow(row.key, p)} onUpdateDay={(date, p) => updateDay(row.key, date, p)} />
+            <ReviewCard
+              key={row.key}
+              row={row}
+              onUpdate={p => updateRow(row.key, p)}
+              onUpdateDay={(date, p) => updateDay(row.key, date, p)}
+              onUpdatePayPeriod={(field, value) => updatePayPeriod(row.key, field, value)}
+            />
           ))}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => { setStep('upload'); setRows([]); }}>Cancel</Button>
@@ -168,10 +193,11 @@ function matchEmployee(d: ParsedTimecardDraft, employees: { id: string; employee
 
 const STATUS_OPTIONS: DailyStatus[] = ['WORK', 'OFF', 'HOLIDAY', 'PTO', 'SICK'];
 
-function ReviewCard({ row, onUpdate, onUpdateDay }: {
+function ReviewCard({ row, onUpdate, onUpdateDay, onUpdatePayPeriod }: {
   row: ReviewRow;
   onUpdate: (patch: Partial<ReviewRow>) => void;
   onUpdateDay: (date: string, patch: Partial<DailyEntry>) => void;
+  onUpdatePayPeriod: (field: 'payPeriodStart' | 'payPeriodEnd', value: string) => void;
 }) {
   const { data } = useApp();
   const [expanded, setExpanded] = useState(true);
@@ -185,9 +211,15 @@ function ReviewCard({ row, onUpdate, onUpdateDay }: {
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setExpanded(v => !v)} className="focus-ring text-[var(--muted)]">{expanded ? '▾' : '▸'}</button>
             <span className="font-medium">{row.firstName} {row.lastName}</span>
-            <span className="text-xs text-[var(--muted)]">{formatDate(row.payPeriodStart)} – {formatDate(row.payPeriodEnd)}</span>
             <Badge tone={row.matchedEmployeeId ? 'good' : 'bad'}>{row.matchedEmployeeId ? 'matched' : 'unmatched'}</Badge>
             <span className="text-xs text-[var(--muted)] tabular">{fmtHours(row.regularHours)} hrs</span>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs text-[var(--muted)]">Pay period:</span>
+            <input type="date" value={row.payPeriodStart} onChange={e => onUpdatePayPeriod('payPeriodStart', e.target.value)} className="rounded-md border border-[var(--border)] bg-white px-2 py-1 text-xs" />
+            <span className="text-xs text-[var(--muted)]">to</span>
+            <input type="date" value={row.payPeriodEnd} onChange={e => onUpdatePayPeriod('payPeriodEnd', e.target.value)} className="rounded-md border border-[var(--border)] bg-white px-2 py-1 text-xs" />
+            <span className="text-xs text-[var(--muted)]">({formatDate(row.payPeriodStart)} – {formatDate(row.payPeriodEnd)})</span>
           </div>
           {!row.matchedEmployeeId && (
             <div className="mt-2 flex items-center gap-2">
