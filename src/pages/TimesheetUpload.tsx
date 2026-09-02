@@ -77,11 +77,19 @@ export function TimesheetUpload() {
     }));
   }
 
+  const unresolvedRows = rows.filter(r => !r.skip && !r.matchedEmployeeId);
+
   async function saveAll() {
+    if (unresolvedRows.length > 0) return; // guarded by the disabled button too, but never proceed silently
     setSaving(true);
     const toSave = rows.filter(r => !r.skip && r.matchedEmployeeId);
     const result = await importTimecards(toSave.map(r => {
-      const emp = data.employees.find(e => e.id === r.matchedEmployeeId)!;
+      // Defensive fallback, not expected in practice: unresolvedRows already
+      // guarantees matchedEmployeeId is set, but if the locally-cached
+      // employee list hasn't caught up to a just-created employee yet, fall
+      // back to the parsed row's own name/number rather than crashing the
+      // whole batch.
+      const emp = data.employees.find(e => e.id === r.matchedEmployeeId);
       return {
         employeeId: r.matchedEmployeeId!,
         weekStartDate: r.payPeriodStart,
@@ -89,8 +97,8 @@ export function TimesheetUpload() {
         dailyEntries: r.dailyEntries,
         regularHours: r.regularHours,
         jobCodeSummary: buildJobCodeSummary(r.dailyEntries),
-        employeeNumberSnapshot: emp.employeeNumber || r.employeeNumberRaw || undefined,
-        employeeNameSnapshot: `${emp.firstName} ${emp.lastName}`,
+        employeeNumberSnapshot: emp?.employeeNumber || r.employeeNumberRaw || undefined,
+        employeeNameSnapshot: emp ? `${emp.firstName} ${emp.lastName}` : `${r.firstName} ${r.lastName}`,
         replaceExistingId: r.replaceExisting ? r.duplicateOfId : null,
       };
     }));
@@ -170,9 +178,15 @@ export function TimesheetUpload() {
               onUpdatePayPeriod={(field, value) => updatePayPeriod(row.key, field, value)}
             />
           ))}
+          {unresolvedRows.length > 0 && (
+            <div className="rounded-lg border border-[var(--bad)]/25 bg-[var(--bad-soft)] px-4 py-3 text-sm text-[var(--bad)]">
+              <strong>{unresolvedRows.length} employee{unresolvedRows.length !== 1 ? 's' : ''} still need{unresolvedRows.length === 1 ? 's' : ''} to be matched, created, or skipped</strong> before you can continue: {unresolvedRows.map(r => `${r.firstName} ${r.lastName}`.trim() || '(unnamed row)').join(', ')}.
+              Nothing will be silently skipped — resolve or check "Skip" on each one above.
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={() => { setStep('upload'); setRows([]); }}>Cancel</Button>
-            <Button onClick={saveAll} disabled={saving || rows.every(r => r.skip || !r.matchedEmployeeId)}>
+            <Button onClick={saveAll} disabled={saving || unresolvedRows.length > 0 || rows.every(r => r.skip)}>
               {saving ? 'Creating…' : `Create timecards →`}
             </Button>
           </div>
