@@ -43,9 +43,12 @@ export function Payroll() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl">Payroll</h1>
-        <p className="text-[var(--ink-soft)] mt-1">Turn approved timesheets into a biweekly pay run.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-display text-3xl">Payroll</h1>
+          <p className="text-[var(--ink-soft)] mt-1">Turn approved timesheets into a biweekly pay run.</p>
+        </div>
+        <Link to="/payroll/quarterly-tax-summary"><Button variant="secondary">Quarterly tax summary</Button></Link>
       </div>
 
       <Card>

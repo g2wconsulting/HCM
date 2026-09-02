@@ -1,8 +1,9 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Company, Employee, Project, Timesheet } from './types';
-import { formatDate, initials } from './format';
+import { formatDate, initials, money } from './format';
 import { formatTimeLabel } from './timesheetParser';
+import type { QuarterlySummary } from './quarterlyTax';
 
 export function buildTimesheetRangePdf(params: {
   company: Company;
@@ -316,4 +317,90 @@ export async function shareOrDownloadPdf(doc: jsPDF, filename: string, shareText
   }
   doc.save(filename);
   return 'downloaded';
+}
+
+/** A one-page worksheet of the figures Form 941 asks for, computed from
+ * this company's finalized payroll runs for the quarter. This is a
+ * computation aid to speed up manually preparing/filing the real return —
+ * it is not the official IRS form and this app does not file or transmit
+ * anything to the IRS. Every page carries that disclaimer prominently. */
+export function buildQuarterlyTaxSummaryPdf(params: { company: Company; summary: QuarterlySummary }): jsPDF {
+  const { company, summary: s } = params;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const marginX = 48;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let y = 56;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text(company.name || 'Quarterly Federal Tax Summary', marginX, y);
+  y += 20;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(90);
+  doc.text(`Quarterly Federal Tax Summary — Q${s.quarter} ${s.year} (${formatDate(s.quarterStart)} – ${formatDate(s.quarterEnd)})`, marginX, y);
+  y += 22;
+  doc.setTextColor(20);
+
+  doc.setFillColor(255, 245, 225);
+  doc.setDrawColor(230, 190, 130);
+  const boxH = 46;
+  doc.roundedRect(marginX, y, pageWidth - marginX * 2, boxH, 4, 4, 'FD');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('NOT AN OFFICIAL IRS FORM', marginX + 10, y + 16);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  const disclaimer = doc.splitTextToSize(
+    'This is a worksheet computed from payroll runs finalized in this app, matching Form 941 line numbering to speed up preparing the real return. Verify every figure — including current-year IRS Pub 15 rates/wage bases — before filing. This app does not e-file or transmit anything to the IRS or any state agency.',
+    pageWidth - marginX * 2 - 20,
+  );
+  doc.text(disclaimer, marginX + 10, y + 28);
+  y += boxH + 26;
+
+  const rows: [string, string, string][] = [
+    ['1', 'Number of employees who received wages this quarter', String(s.employeeCount)],
+    ['2', 'Wages, tips, and other compensation', money(s.totalWages)],
+    ['3', 'Federal income tax withheld', money(s.federalIncomeTaxWithheld)],
+    ['5a', 'Taxable Social Security wages (col. 1) / tax at 12.4% (col. 2)', `${money(s.socialSecurityWages)} / ${money(s.socialSecurityTax)}`],
+    ['5c', 'Taxable Medicare wages (col. 1) / tax at 2.9% (col. 2)', `${money(s.medicareWages)} / ${money(s.medicareTax)}`],
+    ['5d', 'Additional Medicare tax withheld (employee-only, 0.9%)', money(s.additionalMedicareTax)],
+    ['6', 'Total taxes before adjustments (3 + 5a + 5c + 5d)', money(s.totalTaxesBeforeAdjustments)],
+  ];
+
+  autoTable(doc, {
+    startY: y,
+    margin: { left: marginX, right: marginX },
+    head: [['Line', 'Description', 'Amount']],
+    body: rows,
+    styles: { fontSize: 9.5, cellPadding: 6 },
+    headStyles: { fillColor: [33, 29, 24], textColor: 255 },
+    columnStyles: { 0: { cellWidth: 36 }, 2: { halign: 'right', cellWidth: 170 } },
+    didParseCell: (data) => {
+      if (data.row.index === rows.length - 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fillColor = [242, 239, 230]; }
+    },
+  });
+  // @ts-expect-error - jspdf-autotable attaches this to the doc instance
+  y = doc.lastAutoTable.finalY + 24;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Payroll runs included', marginX, y);
+  y += 8;
+  autoTable(doc, {
+    startY: y + 6,
+    margin: { left: marginX, right: marginX },
+    head: [['Pay date', 'Period']],
+    body: s.runsIncluded.map(r => [formatDate(r.payDate), `${formatDate(r.periodStart)} – ${formatDate(r.periodEnd)}`]),
+    styles: { fontSize: 9, cellPadding: 5 },
+    headStyles: { fillColor: [33, 29, 24], textColor: 255 },
+  });
+  if (s.runsIncluded.length === 0) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text('No finalized payroll runs fall within this quarter.', marginX, y + 20);
+  }
+
+  return doc;
 }

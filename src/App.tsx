@@ -15,6 +15,7 @@ import { FormTemplates } from './pages/FormTemplates';
 import { Projects } from './pages/Projects';
 import { Payroll } from './pages/Payroll';
 import { PayrollRunDetail } from './pages/PayrollRunDetail';
+import { QuarterlyTaxSummary } from './pages/QuarterlyTaxSummary';
 import { Settings } from './pages/Settings';
 import { MyPay } from './pages/MyPay';
 import { MyOnboarding } from './pages/MyOnboarding';
@@ -94,6 +95,7 @@ function GatedApp() {
           <Route path="/projects" element={<RoleOnly roles={['admin']}><Projects /></RoleOnly>} />
           <Route path="/payroll" element={<RoleOnly roles={['admin']}><Payroll /></RoleOnly>} />
           <Route path="/payroll/:id" element={<RoleOnly roles={['admin']}><PayrollRunDetail /></RoleOnly>} />
+          <Route path="/payroll/quarterly-tax-summary" element={<RoleOnly roles={['admin']}><QuarterlyTaxSummary /></RoleOnly>} />
           <Route path="/settings" element={<RoleOnly roles={['admin']}><Settings /></RoleOnly>} />
 
           <Route path="/portal/employees" element={<RoleOnly roles={['client']}><PortalEmployees /></RoleOnly>} />
