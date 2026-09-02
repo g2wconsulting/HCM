@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../lib/AppContext';
-import { Badge, Button, Card, SectionLabel } from '../components/ui';
+import { Badge, Button, Card, SectionLabel, inputClass } from '../components/ui';
 import { formatDate, hours as fmtHours } from '../lib/format';
 import { parseTimesheetFile, buildJobCodeSummary, reflowDailyEntries, type ParsedTimecardDraft } from '../lib/timesheetParser';
 import type { DailyEntry, DailyStatus } from '../lib/types';
@@ -222,16 +222,20 @@ function ReviewCard({ row, onUpdate, onUpdateDay, onUpdatePayPeriod }: {
             <span className="text-xs text-[var(--muted)]">({formatDate(row.payPeriodStart)} – {formatDate(row.payPeriodEnd)})</span>
           </div>
           {!row.matchedEmployeeId && (
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-xs text-[var(--muted)]">Match to existing employee:</span>
-              <select
-                value={row.matchedEmployeeId ?? ''}
-                onChange={e => onUpdate({ matchedEmployeeId: e.target.value || null, duplicateOfId: null })}
-                className="focus-ring rounded-md border border-[var(--border)] bg-white px-2 py-1 text-sm"
-              >
-                <option value="">Select employee…</option>
-                {data.employees.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}{e.employeeNumber ? ` (${e.employeeNumber})` : ''}</option>)}
-              </select>
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-[var(--muted)]">Match to existing employee:</span>
+                <select
+                  value={row.matchedEmployeeId ?? ''}
+                  onChange={e => onUpdate({ matchedEmployeeId: e.target.value || null, duplicateOfId: null })}
+                  className="focus-ring rounded-md border border-[var(--border)] bg-white px-2 py-1 text-sm"
+                >
+                  <option value="">Select employee…</option>
+                  {data.employees.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}{e.employeeNumber ? ` (${e.employeeNumber})` : ''}</option>)}
+                </select>
+                <span className="text-xs text-[var(--muted)]">or</span>
+                <CreateEmployeeInline row={row} onCreated={id => onUpdate({ matchedEmployeeId: id, duplicateOfId: null })} />
+              </div>
             </div>
           )}
           {duplicate && (
@@ -332,5 +336,54 @@ function ReviewCard({ row, onUpdate, onUpdateDay, onUpdatePayPeriod }: {
         </div>
       )}
     </Card>
+  );
+}
+
+function CreateEmployeeInline({ row, onCreated }: { row: ReviewRow; onCreated: (employeeId: string) => void }) {
+  const { data, addEmployee } = useApp();
+  const [open, setOpen] = useState(false);
+  const [firstName, setFirstName] = useState(row.firstName);
+  const [lastName, setLastName] = useState(row.lastName);
+  const [employeeNumber, setEmployeeNumber] = useState(row.employeeNumberRaw);
+  const [email, setEmail] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function create() {
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) { setError('First name, last name, and email are required.'); return; }
+    setSaving(true);
+    setError(null);
+    const created = await addEmployee({
+      companyId: data.currentCompanyId!, firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(),
+      title: '', status: 'onboarding', payType: 'hourly', state: 'OR', filingStatus: 'single',
+      federalAllowancesExtraWithholding: 0, defaultHourlyRate: 0, dependentsCredit: 0,
+      hireDate: new Date().toISOString().slice(0, 10), rates: [], projectIds: [],
+      employeeNumber: employeeNumber.trim() || undefined,
+    } as any);
+    setSaving(false);
+    if (!created) { setError('Could not create the employee — check the browser console for details.'); return; }
+    setOpen(false);
+    onCreated(created.id);
+  }
+
+  if (!open) {
+    return <button onClick={() => setOpen(true)} className="focus-ring text-xs text-[var(--accent)] hover:underline font-medium">+ Create new employee</button>;
+  }
+
+  return (
+    <div className="w-full mt-1 rounded-lg border border-[var(--border)] bg-white p-3 space-y-2">
+      <div className="grid grid-cols-4 gap-2">
+        <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" className={inputClass} />
+        <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Last name" className={inputClass} />
+        <input value={employeeNumber} onChange={e => setEmployeeNumber(e.target.value)} placeholder="Employee # (optional)" className={inputClass} />
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email (required)" className={inputClass} />
+      </div>
+      {error && <p className="text-xs text-[var(--bad)]">{error}</p>}
+      <p className="text-xs text-[var(--muted)]">Creates a minimal employee record (status: onboarding) — fill in pay rate, tax details, etc. on their profile afterward.</p>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={create} disabled={saving}>{saving ? 'Creating…' : 'Create employee'}</Button>
+        <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+    </div>
   );
 }
